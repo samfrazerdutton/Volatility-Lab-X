@@ -166,8 +166,17 @@ RegimeShape shape_for(MarketRegime r) {
             s.ssvi.rho = -0.40;
             s.ssvi.eta = 0.80;
             s.ssvi.gamma = 0.45;
+            // The *volatility* ladder has a bump at the earnings expiry and
+            // decays after it; the *total variance* ladder must still be
+            // increasing, or the generated data contains calendar arbitrage
+            // and every downstream no-arbitrage test is being fed a
+            // contradiction.  The first version used
+            // {0.21, 0.23, 0.38, 0.26, ...}, which gives w = 0.0087 at
+            // T = 0.060 and 0.0055 at T = 0.082 -- decreasing, and therefore
+            // arbitrageable.  The vol bump is just as pronounced here, but the
+            // decay is gentle enough to keep w monotone.
             s.expiries = {0.019, 0.038, 0.060, 0.082, 0.167, 0.25, 0.5, 1.0};
-            s.atm_vol = {0.21, 0.23, 0.38, 0.26, 0.24, 0.23, 0.22, 0.21};
+            s.atm_vol = {0.210, 0.230, 0.420, 0.370, 0.290, 0.260, 0.235, 0.220};
             break;
 
         case MarketRegime::Illiquid:

@@ -122,11 +122,24 @@ struct WeightConfig {
     /// half a basis point of volatility: tighter than any real market quotes.
     double min_half_spread_vol = 0.0005;
 
-    /// Cap on the resulting weight relative to the median, so one
-    /// suspiciously tight quote cannot dominate a slice.  This is the guard
-    /// against the failure mode inverse-variance weighting is prone to: the
-    /// estimator trusts whichever observation *claims* the smallest error.
-    double max_weight_ratio = 50.0;
+    /// Cap on the resulting weight relative to the median.  A first, robust
+    /// filter: the median is itself insensitive to the outlier being guarded
+    /// against.
+    double max_weight_ratio = 20.0;
+
+    /// Hard cap on any single quote's share of the slice's total weight.
+    ///
+    /// This is the constraint that actually expresses the intent, and the
+    /// median ratio alone does not imply it.  With ten quotes and a cap of 20x
+    /// the median, the outlier still ends up with 20/29 = 69% of the total --
+    /// so the slice is still determined by one quote, which is exactly the
+    /// failure mode inverse-variance weighting is prone to: the estimator
+    /// trusts whichever observation *claims* the smallest error, and a locked
+    /// market or a stale print claims a very small one.
+    ///
+    /// Applied by iteration, because capping changes the total it is a
+    /// fraction of.  Three passes are enough for the fixed point.
+    double max_weight_fraction = 0.25;
 
     /// Width of the moneyness kernel, in standard deviations.  2.0 is wide:
     /// at 2 sd the weight is exp(-0.5) = 0.61, so the wings are moderated

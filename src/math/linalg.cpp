@@ -252,6 +252,12 @@ BoxedLeastSquaresResult solve_boxed_least_squares(const NormalEquations& eq,
                 obj += x[i] * aij * x[j];
             }
         }
+        // The objective is evaluated as chi2 - 2 x^T b + x^T A x, which
+        // cancels when the fit is near-exact: on noiseless data chi2 is 0.034
+        // and the true objective is 0, so the result is around 1e-18 and can
+        // land slightly negative.  Clamped, because a negative sum of squares
+        // is never meaningful and would propagate into a sqrt downstream.
+        obj = std::max(obj, 0.0);
         if (obj < best.objective) {
             best.objective = obj;
             best.solution = x;

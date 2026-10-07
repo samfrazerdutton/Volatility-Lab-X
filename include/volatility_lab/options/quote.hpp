@@ -117,8 +117,17 @@ struct OptionQuote {
     double age_seconds = -1.0;
 
     // -- derived by normalisation ------------------------------------------
-    double mid = 0.0;              ///< the price actually fitted
-    double discount = 1.0;         ///< DF to the payment date
+    double mid = 0.0;  ///< the price actually fitted
+
+    /// Discount factor to the payment date.
+    ///
+    /// **Zero means "not supplied, please derive"**, which is why the default
+    /// is 0 rather than the more obvious 1.  With a default of 1 the sentinel
+    /// is indistinguishable from a legitimately undiscounted quote, so
+    /// `derive_forward_and_discount` could never tell whether to compute
+    /// exp(-rT) -- and silently used 1.0 for every quote that did not set it,
+    /// which is a real mispricing at any non-trivial rate.
+    double discount = 0.0;
     double log_moneyness = 0.0;    ///< k = log(K/F)
     double total_variance = 0.0;   ///< implied_vol^2 * years
     double vega = 0.0;             ///< dPrice/dVol at the implied vol

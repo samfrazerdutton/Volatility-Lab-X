@@ -145,17 +145,60 @@ SviInnerSolve svi_inner_solve(std::span<const OptionQuote> quotes, double m, dou
     }
     if (eq.count() < 3) return out;
 
-    // 4*sigma is Lee's moment bound expressed in these coordinates: it caps
-    // the total-variance wing slope at 2, which is the largest value
-    // compatible with the underlying having the corresponding moment.
+    // Lee's moment bound in these coordinates.
+    //
+    // The asymptotic wing slopes of total variance are
+    //     right: b(1 + rho) = (c + d)/sigma = u/sigma
+    //     left:  b(1 - rho) = (c - d)/sigma = v/sigma
+    // and Lee's moment formula caps both at 2.  So the bound is
+    // u, v <= 2*sigma.
+    //
+    // It was 4*sigma here at first, which is the form the constraint is often
+    // written in -- |d| <= 4*sigma - c -- and that permits a slope of 4,
+    // exactly twice Lee's limit.  The error was invisible on every realistic
+    // regime, because the fitted slopes peak around 0.4 and the bound never
+    // activated; it only surfaced on deliberately inadmissible data with a
+    // slope of 5, where the "bounded" fit returned 4.  A constraint that is
+    // wrong by a factor of two but never binds is still wrong, and it would
+    // have bound on the first genuinely stressed surface.
     const double uv_upper = cfg.enforce_wing_bound
-                                ? std::max(4.0 * sigma, 1e-12)
+                                ? std::max(kLeeSlopeBound * sigma, 1e-12)
                                 : std::numeric_limits<double>::infinity();
-    const std::array<double, 3> lower{0.0, 0.0, 0.0};
+    std::array<double, 3> lower{0.0, 0.0, 0.0};
     const std::array<double, 3> upper{std::max(w_max, 1e-12), uv_upper, uv_upper};
 
-    const auto result = math::solve_boxed_least_squares(eq, lower, upper);
+    // The exact non-negative-variance condition, imposed by iteration.
+    //
+    // `adash >= 0` is sufficient but conservative: the true condition is
+    // a + b*sigma*sqrt(1-rho^2) >= 0, and in these coordinates
+    //
+    //     b*sigma*sqrt(1-rho^2) = c*sqrt(1 - d^2/c^2) = sqrt(c^2 - d^2)
+    //                           = sqrt((c-d)(c+d)) = sqrt(u*v)
+    //
+    // so the exact condition is simply  adash >= -sqrt(u*v).
+    //
+    // That couples adash to u and v, so it is not a box constraint and cannot
+    // go straight into the enumeration.  But sqrt(u*v) varies slowly, so
+    // solving the box with a lower bound of -sqrt(u*v) from the previous
+    // iterate converges in two or three passes -- and each pass is itself
+    // exact.  Imposing only `adash >= 0` instead cost up to 50% in RMS
+    // volatility error on the earnings regime, where the bump drives the
+    // fitted level negative.
+    auto result = math::solve_boxed_least_squares(eq, lower, upper);
     if (!result.feasible) return out;
+    for (int pass = 0; pass < 3; ++pass) {
+        const double wing = std::sqrt(std::max(result.solution[1] * result.solution[2], 0.0));
+        const double exact_lower = -wing;
+        if (exact_lower >= lower[0] - 1e-18) break;  // already no tighter
+        lower[0] = exact_lower;
+        const auto refined = math::solve_boxed_least_squares(eq, lower, upper);
+        if (!refined.feasible) break;
+        if (refined.objective >= result.objective * (1.0 - 1e-15)) {
+            result = refined;
+            break;
+        }
+        result = refined;
+    }
 
     const double u = result.solution[1];
     const double v = result.solution[2];

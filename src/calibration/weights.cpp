@@ -136,17 +136,51 @@ std::vector<WeightBreakdown> assign_weights(std::span<OptionQuote> quotes,
     std::nth_element(positives.begin(), positives.begin() + static_cast<std::ptrdiff_t>(mid),
                      positives.end());
     const double median = positives[mid];
-    const double cap = (cfg.max_weight_ratio > 0.0 && median > 0.0)
-                           ? median * cfg.max_weight_ratio
-                           : std::numeric_limits<double>::infinity();
+    const double median_cap = (cfg.max_weight_ratio > 0.0 && median > 0.0)
+                                  ? median * cfg.max_weight_ratio
+                                  : std::numeric_limits<double>::infinity();
+    for (auto& b : out) {
+        if (b.combined > 0.0) b.combined = std::min(b.combined, median_cap);
+    }
 
+    // Then the share cap, which is the constraint that actually expresses the
+    // intent.  The median ratio alone does not imply it: with ten quotes and a
+    // 20x median cap the outlier still carries 69% of the total.  Iterated
+    // because capping changes the total it is a fraction of; three passes
+    // reach the fixed point.
     double sum = 0.0;
     std::size_t used = 0;
-    for (auto& b : out) {
-        if (b.combined <= 0.0) continue;
-        b.combined = std::min(b.combined, cap);
-        sum += b.combined;
-        ++used;
+    for (const auto& b : out) {
+        if (b.combined > 0.0) {
+            sum += b.combined;
+            ++used;
+        }
+    }
+    if (cfg.max_weight_fraction > 0.0 && cfg.max_weight_fraction < 1.0 && used > 1) {
+        // The cap cannot be below 1/used: n weights summing to the total
+        // cannot all be under (1/n) of it, so a tighter cap is infeasible and
+        // the iteration drives every weight to exactly equal -- silently
+        // discarding the entire weighting model.  That is what happened with
+        // two quotes and a 25% cap, which is how this was found.  The floor of
+        // 1.5/used leaves room for a genuine spread of weights in small
+        // slices while still binding on the large ones the cap is for.
+        const double fraction =
+            std::max(cfg.max_weight_fraction, 1.5 / static_cast<double>(used));
+        for (int pass = 0; pass < 3; ++pass) {
+            const double share_cap = fraction * sum;
+            double new_sum = 0.0;
+            bool changed = false;
+            for (auto& b : out) {
+                if (b.combined <= 0.0) continue;
+                if (b.combined > share_cap) {
+                    b.combined = share_cap;
+                    changed = true;
+                }
+                new_sum += b.combined;
+            }
+            sum = new_sum;
+            if (!changed) break;
+        }
     }
 
     // Normalise to a unit mean, so the reported objective and rms_residual are

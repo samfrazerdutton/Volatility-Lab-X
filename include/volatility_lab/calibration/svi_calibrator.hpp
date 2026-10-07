@@ -8,11 +8,17 @@
 /// Raw SVI has five parameters and they are badly coupled: `a` trades off
 /// against `b*sigma` almost one-for-one near the money, and `m` trades off
 /// against `rho` in the wings.  A five-dimensional nonlinear least squares on
-/// that surface has genuine local minima, and a Levenberg-Marquardt run from a
-/// single starting point lands in one of them often enough to matter -- not
-/// occasionally, but on a noticeable fraction of ordinary slices.  The usual
-/// response is multi-start, which turns a reliability problem into a cost
-/// problem without fully solving either.
+/// that surface has genuine local minima, and the usual response is
+/// multi-start, which turns a reliability problem into a cost problem without
+/// fully solving either.
+///
+/// How bad the local-minimum problem actually is was measured rather than
+/// assumed, and the answer is "it depends entirely on the data" -- see the
+/// table near the end of this comment.  On ordinary surfaces almost any
+/// starting point works; on a crash surface the objective varies by a factor
+/// of a hundred between starts.  The reduction below is worth having for both
+/// cases, but for different reasons: speed on the easy data, correctness on
+/// the hard data.
 ///
 /// ## The reduction
 ///
@@ -51,18 +57,18 @@
 ///
 ///     c >= 0                      (b >= 0)
 ///     |d| <= c                    (|rho| <= 1)
-///     |d| <= 4*sigma - c          (Lee's wing bound: dw/dk <= 2 asymptotically)
+///     |d| <= 2*sigma - c          (Lee's wing bound: dw/dk <= 2 asymptotically)
 ///     0 <= adash <= max(w_i)      (non-negative variance; no level above data)
 ///
 /// but one substitution turns them into a box.  Put
 ///
 ///     u = c + d,   v = c - d
 ///
-/// Then `|d| <= c` is exactly `u >= 0 and v >= 0`, and `|d| <= 4 sigma - c` is
-/// exactly `max(u, v) <= 4 sigma` -- both by cases on the sign of `u - v`.  So
-/// in `(adash, u, v)` the whole admissible set is
+/// Then `|d| <= c` is exactly `u >= 0 and v >= 0`, and the wing bound is
+/// exactly `max(u, v) <= 2 sigma`, since the asymptotic slopes are `u/sigma`
+/// and `v/sigma`.  So in `(adash, u, v)` the whole admissible set is
 ///
-///     0 <= adash <= max(w_i),   0 <= u <= 4 sigma,   0 <= v <= 4 sigma
+///     0 <= adash <= max(w_i),   0 <= u <= 2 sigma,   0 <= v <= 2 sigma
 ///
 /// and the inner problem is a three-variable least squares over a *box*.  With
 /// three variables there are 27 active sets, so

@@ -68,6 +68,10 @@ vl_add_test(numerical interpolation)
 vl_add_test(numerical slice_models)
 vl_add_test(numerical surface)
 
+# --- calibration -----------------------------------------------------------
+vl_add_test(calibration market_data)
+vl_add_test(calibration svi_calibrator)
+
 # --- pricing ---------------------------------------------------------------
 vl_add_test(pricing black)
 vl_add_test(pricing implied_vol)

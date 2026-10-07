@@ -170,6 +170,95 @@ ReferenceGreeks black_greeks_ref(double forward, double strike, double vol, doub
     return g;
 }
 
+SpotGreeks black_scholes_greeks_ref(double spot, double strike, double vol, double years,
+                                    double rate, double carry, OptionType type) noexcept {
+    // Price as a function of the four free axes (S, sigma, T, r), with K, q
+    // fixed.  Built from the same dd primitives as the rest of this file --
+    // log_dd, exp_dd, sqrt_dd, normalised_black_dd -- but driven from the spot
+    // measure outward, so F and DF appear as *derived* quantities inside the
+    // lambda rather than as the free variables, exactly as they are in a real
+    // pricer.
+    const DDouble K(strike);
+    auto price = [&](DDouble S, DDouble sig, DDouble T, DDouble r) {
+        const DDouble F = S * exp_dd((r - DDouble(carry)) * T);
+        const DDouble DF = exp_dd(-r * T);
+        DDouble x = math::log_dd(F / K);
+        if (x.hi() > 0.0) x = -x;  // fold to the OTM side, as black_undiscounted does
+        const DDouble s = sig * sqrt_dd(T);
+        const DDouble sqrt_fk = sqrt_dd(F * K);
+        const DDouble otm = sqrt_fk * normalised_black_dd(x, s);
+        const DDouble intr = (type == OptionType::Call) ? (F - K) : (K - F);
+        const DDouble U = (intr.hi() > 0.0) ? otm + intr : otm;
+        return DF * U;
+    };
+
+    const DDouble S(spot);
+    const DDouble V(vol);
+    const DDouble T(years);
+    const DDouble R(rate);
+
+    // Steps as fractions of each axis's own scale; see black_greeks_ref above
+    // for why 1e-9 is the chosen balance between truncation and round-off at
+    // dd precision.  `years` can be very small (the vol-crush regime goes
+    // down to a few hours), so hT additionally has an absolute floor.
+    const DDouble hS = S * 1.0e-9;
+    const DDouble hV = V * 1.0e-9;
+    const DDouble hT = DDouble(std::max(years * 1.0e-9, 1.0e-13));
+    const DDouble hR = DDouble(std::max(std::abs(rate), 0.01)) * 1.0e-9;
+
+    // Speed is a *third* derivative, estimated from a 4-point stencil whose
+    // error has a round-off term scaling as eps_dd/h^3 and a truncation term
+    // scaling as h^2.  At the same h = 1.0e-9*S used for the first and second
+    // derivatives above, h^3 ~= 1.0e-27*S^3 and dividing a dd-precision
+    // (~1.0e-31) numerator by that leaves only ~1.0e-4 relative digits --
+    // exactly the "BAD" discrepancy an early version of the Greeks test saw
+    // against an otherwise-correct production formula.  A larger step
+    // rebalances the two error terms: at h ~= 1.0e-6*S, round-off is
+    // ~1.0e-31/1.0e-18 ~= 1.0e-13 and truncation is still ~1.0e-12, both far
+    // below the double-precision quantity this is meant to validate.
+    const DDouble hS3 = S * 1.0e-6;
+
+    const DDouble p0 = price(S, V, T, R);
+    const DDouble pSp = price(S + hS, V, T, R);
+    const DDouble pSm = price(S - hS, V, T, R);
+    const DDouble pSp3 = price(S + hS3, V, T, R);
+    const DDouble pSm3 = price(S - hS3, V, T, R);
+    const DDouble pSp2x3 = price(S + hS3 * 2.0, V, T, R);
+    const DDouble pSm2x3 = price(S - hS3 * 2.0, V, T, R);
+    const DDouble pVp = price(S, V + hV, T, R);
+    const DDouble pVm = price(S, V - hV, T, R);
+    const DDouble pTp = price(S, V, T + hT, R);
+    const DDouble pTm = price(S, V, T - hT, R);
+    const DDouble pRp = price(S, V, T, R + hR);
+    const DDouble pRm = price(S, V, T, R - hR);
+    const DDouble pSpVp = price(S + hS, V + hV, T, R);
+    const DDouble pSpVm = price(S + hS, V - hV, T, R);
+    const DDouble pSmVp = price(S - hS, V + hV, T, R);
+    const DDouble pSmVm = price(S - hS, V - hV, T, R);
+    const DDouble pSpTp = price(S + hS, V, T + hT, R);
+    const DDouble pSpTm = price(S + hS, V, T - hT, R);
+    const DDouble pSmTp = price(S - hS, V, T + hT, R);
+    const DDouble pSmTm = price(S - hS, V, T - hT, R);
+
+    SpotGreeks g{};
+    g.price = p0.to_double();
+    g.delta = ((pSp - pSm) / (hS * 2.0)).to_double();
+    g.gamma = ((pSp - p0 * 2.0 + pSm) / (hS * hS)).to_double();
+    g.vega = ((pVp - pVm) / (hV * 2.0)).to_double();
+    g.volga = ((pVp - p0 * 2.0 + pVm) / (hV * hV)).to_double();
+    g.vanna = ((pSpVp - pSpVm - pSmVp + pSmVm) / (hS * hV * 4.0)).to_double();
+    // Theta in the calendar-decay convention: d/dt = -d/dT.
+    g.theta = (-(pTp - pTm) / (hT * 2.0)).to_double();
+    g.rho = ((pRp - pRm) / (hR * 2.0)).to_double();
+    // Charm = dDelta/dt = -d2Price/(dS dT).
+    g.charm = (-(pSpTp - pSpTm - pSmTp + pSmTm) / (hS * hT * 4.0)).to_double();
+    // Speed = d3Price/dS3, standard central third-derivative stencil, at the
+    // wider hS3 step derived above.
+    g.speed =
+        ((pSp2x3 - pSp3 * 2.0 + pSm3 * 2.0 - pSm2x3) / (hS3 * hS3 * hS3 * 2.0)).to_double();
+    return g;
+}
+
 double implied_vol_ref(double normalised_price, double x) noexcept {
     // Bisection in double-double on b(x, s) - beta.  No derivatives, no
     // initial guess, no branch logic: nothing shared with the production

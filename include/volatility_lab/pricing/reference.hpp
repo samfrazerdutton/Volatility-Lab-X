@@ -90,6 +90,42 @@ struct ReferenceGreeks {
 [[nodiscard]] ReferenceGreeks black_greeks_ref(double forward, double strike, double vol,
                                                double years, OptionType type) noexcept;
 
+/// Full spot-measure Greeks, by double-double central difference directly on
+/// (S, sigma, T, r) with q (carry/dividend yield) held as a fixed parameter --
+/// mirroring `black_scholes_price`'s own signature so the two are directly
+/// comparable.
+///
+/// This is deliberately a *second*, independent reference next to
+/// `black_greeks_ref` rather than a derived/converted form of it.
+/// `black_greeks_ref` differentiates the undiscounted forward-measure price
+/// U(F,sigma,T) holding F and T as independent axes (forward delta, "theta
+/// with the forward held fixed") -- clean for validating the normalised-Black
+/// kernel itself, but it is not what a trading desk means by delta, theta or
+/// rho, because in the real world S, r and q jointly determine F, and T
+/// enters both the forward and the discount factor.  `black_scholes_greeks_ref`
+/// differentiates the full spot-measure price DF(r)*U(F(S,r),sigma,T)
+/// directly, so every cross-dependency (F on S and r, DF on r, both on T) is
+/// captured by the finite difference itself rather than by a hand-derived
+/// chain rule that could get a sign or a term wrong.  The production
+/// `black_scholes_greeks` *does* use the closed-form chain rule (for speed),
+/// and this is what catches it if that derivation is wrong.
+struct SpotGreeks {
+    double price;
+    double delta;  ///< dPrice/dS
+    double gamma;  ///< d2Price/dS2
+    double vega;   ///< dPrice/dsigma
+    double theta;  ///< dPrice/dt = -dPrice/dT  (calendar decay convention)
+    double rho;    ///< dPrice/dr
+    double vanna;  ///< d2Price/(dS dsigma)
+    double volga;  ///< d2Price/dsigma2
+    double charm;  ///< dDelta/dt = -d2Price/(dS dT)
+    double speed;  ///< d3Price/dS3
+};
+
+[[nodiscard]] SpotGreeks black_scholes_greeks_ref(double spot, double strike, double vol,
+                                                  double years, double rate, double carry,
+                                                  OptionType type) noexcept;
+
 /// Reference implied volatility: bisection in double-double on the normalised
 /// price, run to the full dd resolution.
 ///

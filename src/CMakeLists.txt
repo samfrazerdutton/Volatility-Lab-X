@@ -34,6 +34,9 @@ set(VL_SOURCES
     calibration/optimizer.cpp
     calibration/weights.cpp
     calibration/svi_calibrator.cpp
+
+    # --- phase 5: Greeks and exact-vs-Taylor repricing ----------------------
+    greeks/greeks.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

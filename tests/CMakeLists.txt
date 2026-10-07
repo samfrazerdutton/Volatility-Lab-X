@@ -78,3 +78,6 @@ vl_add_test(pricing implied_vol)
 
 # --- greeks ------------------------------------------------------------
 vl_add_test(greeks greeks)
+
+# --- portfolio ---------------------------------------------------------
+vl_add_test(portfolio portfolio)

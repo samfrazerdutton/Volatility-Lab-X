@@ -37,6 +37,9 @@ set(VL_SOURCES
 
     # --- phase 5: Greeks and exact-vs-Taylor repricing ----------------------
     greeks/greeks.cpp
+
+    # --- phase 6: portfolio and PnL attribution ------------------------------
+    portfolio/portfolio.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

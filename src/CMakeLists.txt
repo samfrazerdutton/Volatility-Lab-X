@@ -25,6 +25,15 @@ set(VL_SOURCES
     volatility/svi.cpp
     volatility/ssvi.cpp
     volatility/surface.cpp
+
+    # --- phase 4: market data, normalisation, synthetic generator ----------
+    options/quote.cpp
+    options/normalize.cpp
+    io/synthetic_market.cpp
+    math/linalg.cpp
+    calibration/optimizer.cpp
+    calibration/weights.cpp
+    calibration/svi_calibrator.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

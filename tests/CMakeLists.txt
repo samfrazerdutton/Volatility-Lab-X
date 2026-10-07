@@ -64,6 +64,9 @@ vl_add_test(unit expected)
 vl_add_test(numerical dd_real)
 vl_add_test(numerical special)
 vl_add_test(numerical root_finding)
+vl_add_test(numerical interpolation)
+vl_add_test(numerical slice_models)
+vl_add_test(numerical surface)
 
 # --- pricing ---------------------------------------------------------------
 vl_add_test(pricing black)

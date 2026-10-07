@@ -19,6 +19,12 @@ set(VL_SOURCES
     pricing/black.cpp
     pricing/reference.cpp
     pricing/implied_vol.cpp
+
+    # --- phase 3: slice models and the surface -----------------------------
+    math/interpolation.cpp
+    volatility/svi.cpp
+    volatility/ssvi.cpp
+    volatility/surface.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

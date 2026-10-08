@@ -1,0 +1,32 @@
+{
+  "benchmark": "million_state",
+  "host_cpu": "8 core AMD Ryzen 9 4900HS with Radeon Graphics",
+  "total_nodes": 215,
+  "incremental": {
+    "n": 1000000,
+    "measured": true,
+    "total_runtime_s": 738.068,
+    "throughput_states_per_second": 1354.89,
+    "p50_ns": 574600,
+    "p95_ns": 1.474e+06,
+    "p99_ns": 2.0705e+06,
+    "mean_ns": 737996,
+    "avg_nodes_recomputed": 206,
+    "avg_nodes_reused": 9,
+    "computation_avoided_fraction": 0.0418605,
+    "peak_working_set_bytes": 22302720
+  },
+  "baseline_full_rebuild": {
+    "n": 2000,
+    "measured": true,
+    "note": "measured on n_baseline states, NOT the full incremental n -- see benchmarks/million_state.cpp's file comment",
+    "total_runtime_s": 2.68103,
+    "mean_ns": 1.31962e+06,
+    "p50_ns": 615700,
+    "p95_ns": 5.9605e+06,
+    "p99_ns": 6.1689e+06,
+    "extrapolated_1m_state_runtime_s": 1319.62,
+    "extrapolation_is_not_a_measurement": true
+  },
+  "per_state_speedup": 1.78812
+}

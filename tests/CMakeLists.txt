@@ -54,6 +54,9 @@ function(vl_add_test dir name)
     )
 endfunction()
 
+# --- property ----------------------------------------------------------------
+vl_add_test(property core_invariants)
+
 # --- unit ------------------------------------------------------------------
 vl_add_test(unit types)
 vl_add_test(unit diagnostics)

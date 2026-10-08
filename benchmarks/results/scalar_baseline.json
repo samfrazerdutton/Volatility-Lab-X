@@ -1,0 +1,14 @@
+{
+  "benchmark": "scalar_baseline",
+  "n": 3528,
+  "host_cpu": "8 core AMD Ryzen 9 4900HS with Radeon Graphics",
+  "compiler": "Clang 22.1.0",
+  "build_type": "RelWithDebInfo",
+  "kernels": [
+    {"name": "black_scholes_price", "ns_per_op": 119.224, "ops_per_sec": 8.38756e+06},
+    {"name": "black_scholes_greeks", "ns_per_op": 147.126, "ops_per_sec": 6.79691e+06},
+    {"name": "erfcx", "ns_per_op": 18.6862, "ops_per_sec": 5.35154e+07},
+    {"name": "norm_cdf_hp", "ns_per_op": 28.3947, "ops_per_sec": 3.52178e+07},
+    {"name": "implied_volatility (round-trip)", "ns_per_op": 911.288, "ops_per_sec": 1.09735e+06}
+  ]
+}

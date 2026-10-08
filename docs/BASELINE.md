@@ -64,6 +64,12 @@ them on with nothing inside is a hard CMake configure error
 reproducing it directly. `tests/` (`VL_BUILD_TESTS`) is populated and stays
 on.
 
+This document is a frozen snapshot of the state *before* the Volatility
+State Compiler runtime work began -- it is intentionally not kept current
+as that work proceeds. `docs/ARCHITECTURE_CURRENT.md` is the living
+inventory; check there (and `docs/PERFORMANCE_ANALYSIS.md` for benchmark
+results) for what exists now.
+
 ## Clean build time
 
 ```

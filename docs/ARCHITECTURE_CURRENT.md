@@ -1,12 +1,10 @@
 # Architecture, as it actually exists today
 
-Written at commit `4da82eb` (2026-10-07), before any Volatility State
-Compiler runtime work (deterministic events, replay, dependency-graph
-*runtime*, SIMD, thread pool, million-state benchmark, regime/factor/cross-
-underlier engines, CLI, Python bindings, research console). This is the
-"what is real" inventory the rest of that work builds on and must not
-regress. See `docs/BASELINE.md` for the measured numbers (build time, test
-time, host/toolchain) that go with this snapshot.
+A **living** inventory, updated as the Volatility State Compiler runtime
+work (directive, 2026-10-07 onward) proceeds -- unlike `docs/BASELINE.md`,
+which is a frozen snapshot of the state *before* that work began and is
+deliberately not kept current. This document is the "what is real" list to
+check before assuming something exists or is still scaffold-only.
 
 ## How to read this document
 
@@ -19,7 +17,14 @@ Every module below is marked:
   not broken; they are deliberately-empty slots the original project
   skeleton left for exactly the work this directive now asks for.
 
-## Real modules
+## Added since the frozen baseline (`docs/BASELINE.md`)
+
+| Module | What it does |
+|---|---|
+| `runtime` (`market_event.hpp`, `state_hash.hpp`, `replay.hpp`, `incremental_engine.hpp`) | Deterministic market events (immutable, strictly-sequenced stream); a portable FNV-1a state fingerprint; deterministic replay (`MarketState` + per-step hashes, verified to match bit-for-bit across independent runs); and the real runtime dependency graph wiring `core/dependency_graph.hpp`'s bookkeeping to the actual pipeline (quote -> expiry slice -> surface -> {surface differential, uncertainty} -> position Greeks -> portfolio -> PnL), verified to produce results identical to a full rebuild and to recalibrate nothing on a pure market-point move. |
+| `benchmarks/` | No longer scaffold-only: `bench_scalar_baseline` measures `black_scholes_price`/`black_scholes_greeks`/`erfcx`/`norm_cdf_hp`/`implied_volatility` (see `docs/PERFORMANCE_ANALYSIS.md` for the numbers and what they imply for SIMD kernel prioritisation). `VL_BUILD_BENCHMARKS=ON` now configures cleanly from a fresh clone. |
+
+## Real modules (from the frozen baseline)
 
 | Module | Headers | What it does |
 |---|---|---|
@@ -44,22 +49,28 @@ Every module below is marked:
 | `kernels/simd/` | same pattern, additionally gated on `VL_ENABLE_SIMD` | AVX2+FMA kernels, compiled as a separate object library so only this translation unit carries the ISA flag — the comment in `kernels/CMakeLists.txt` is explicit about why (a binary that mixes ISA levels in one TU is how a "portable" build acquires an illegal-instruction crash on older hardware). `VL_ENABLE_SIMD=ON` and `-mavx2 -mfma` are already wired into the build (`VL_SIMD_DESCRIPTION`); there is simply no kernel source here yet. |
 | `kernels/parallel/` | same pattern | Thread pool and/or OpenMP execution over the scalar/SIMD kernels. No `std::thread` or thread-pool code exists anywhere in the repository yet (`grep -rln "std::thread\|ThreadPool" src include` is empty). |
 | `kernels/cuda/` | `VL_ENABLE_CUDA` (off) + `EXISTS` | Explicitly deferred; `VL_ENABLE_CUDA` defaults off and nothing requires turning it on. |
-| `benchmarks/` | `VL_BUILD_BENCHMARKS` (currently forced off — see `BASELINE.md`) | Empty. No benchmark harness, no million-state benchmark, no performance-regression system exist yet. |
 | `apps/cli/` | `VL_BUILD_CLI` (currently forced off) | Empty. No CLI exists. |
 | `examples/` | `VL_BUILD_EXAMPLES` (currently forced off) | Empty. |
 | `python/` | `VL_BUILD_PYTHON` (defaults off) | Empty. No pybind11 bindings exist. |
 | `research/`, `tools/`, `data/` | not wired into CMake at all | Empty; no research console frontend, no auxiliary tooling, no sample data files. |
 | `include/volatility_lab/{execution,numerics,optimization}/`, `src/{execution,numerics,optimization}/` | n/a | Empty directories with no files. Not currently used by anything — `calibration/optimizer.hpp` already covers what an `optimization/` module name might suggest, and the double-double/`erfcx`/root-finding code that might suggest a dedicated `numerics/` module in fact lives under `math/` and is referred to as "numerics" descriptively in this document, not as a separate real module. |
 
-There is, as of this snapshot, **no deterministic market event model, no
-replay engine, no state hashing, no runtime (as opposed to bookkeeping)
-dependency-graph execution, no regime engine, no volatility factor engine,
-no cross-underlier engine, no surface health engine, and no numerical-
-conditioning diagnostic layer.** `core/dependency_graph.hpp` is real but is
-explicitly scoped as a label-and-dirty-flag bookkeeping structure, not a
-scheduler — nothing in the codebase yet calls it from a real market-event
-pipeline; `tests/core/dependency_graph.cpp` exercises it with synthetic
-node graphs only.
+The deterministic market event model, replay engine, state hashing, and a
+real runtime dependency-graph execution layer (`runtime/incremental_engine.hpp`,
+wiring `core/dependency_graph.hpp`'s bookkeeping to the actual quote ->
+expiry slice -> surface -> {differential, uncertainty} -> Greeks ->
+portfolio -> PnL pipeline) now exist -- see "Added since the frozen
+baseline" above. `core/dependency_graph.hpp` itself remains exactly what it
+was designed to be: label-and-dirty-flag bookkeeping, not a scheduler;
+`IncrementalEngine` is the scheduler built on top of it.
+
+Still absent, as of this update: **a regime engine, a volatility factor
+engine, a cross-underlier engine, a surface health engine, a numerical-
+conditioning diagnostic layer, SIMD kernels (though the scalar baseline
+they will be compared against is now measured -- see
+`docs/PERFORMANCE_ANALYSIS.md`), a thread pool, a million-state benchmark,
+a performance-regression system, a CLI, Python bindings, and the research
+console.**
 
 ## Protected numerical regressions
 
@@ -130,14 +141,18 @@ scenario boundary artifact) the *test that would catch the regression*
 exists specifically because the original mistake was made once already
 inside this same project.
 
-## What "turn the dependency graph into a real runtime" means concretely
+## What "turn the dependency graph into a real runtime" turned out to mean
 
-`core/dependency_graph.hpp` today tracks labels and dirty flags for a DAG a
-caller builds and walks by hand; nothing produces that DAG automatically
-from the real calibration → surface → Greeks → portfolio pipeline, and
-nothing feeds it from an actual market event stream (which does not exist
-yet either). The directive's Phase 1/2/6/7 work is to build the event model
-and replay engine first, then wire the *existing* calibration
-(`calibration/incremental.hpp`), surface, Greeks, and portfolio functions
-into nodes of the *existing* `DependencyGraph`, rather than inventing either
-a new graph structure or new versions of the math.
+Done: `runtime/incremental_engine.hpp`'s `IncrementalEngine` builds one
+`DependencyGraph` from an initial quote book (one `ExpirySlice` node per
+expiry, a `Surface` node depending on all of them, `SurfaceDifferential`/
+`Uncertainty`/one-per-`Position` Greeks nodes depending on `Surface`, a
+`Portfolio` node depending on every position, a `Pnl` node depending on
+`Portfolio`), and for each node the graph reports dirty, calls the one
+already-tested function responsible for that piece of the pipeline
+(`calibrate_svi_slice`, `VolSurface`'s constructor,
+`compute_surface_differential`, `estimate_point_uncertainty`,
+`value_position`, `aggregate_greeks`, `compute_pnl_attribution`) --
+exactly the "wire the existing functions into nodes of the existing
+DependencyGraph" plan this section originally described, not a new graph
+structure or new math.

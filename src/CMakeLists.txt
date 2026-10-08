@@ -53,6 +53,9 @@ set(VL_SOURCES
 
     # --- phase 10: scenario graph ---------------------------------------------
     scenarios/scenario.cpp
+
+    # --- runtime: deterministic market event model ----------------------------
+    runtime/market_event.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

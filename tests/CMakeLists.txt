@@ -94,3 +94,6 @@ vl_add_test(risk uncertainty)
 
 # --- scenarios ---------------------------------------------------------------
 vl_add_test(scenarios scenario)
+
+# --- runtime -----------------------------------------------------------------
+vl_add_test(runtime market_event)

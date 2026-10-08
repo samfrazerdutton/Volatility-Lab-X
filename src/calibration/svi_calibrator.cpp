@@ -438,6 +438,7 @@ SviFitResult calibrate_svi_slice(std::span<const OptionQuote> quotes,
     }
 
     // --- assemble ---------------------------------------------------------
+    out.active_constraints = best_inner.active_constraints;
     out.params = svi_from_reduced(best_inner.reduced, best_m, best_sigma, ext.years);
     const SviParams before_projection = out.params;
     out.params = svi_project_to_admissible(out.params);

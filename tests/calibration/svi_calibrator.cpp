@@ -797,6 +797,14 @@ TEST(SviCalibrator, WingBoundBindsOnDataThatDemandsASteepWing) {
     // And the bounded fit necessarily has the larger residual -- that is what
     // a binding constraint means.
     EXPECT_GT(bounded.objective, unbounded.objective);
+    // The active-constraint count (SviFitResult::active_constraints,
+    // carried up from the winning SviInnerSolve) must say so too: this is
+    // exactly the case it exists to flag -- a fit sitting on the boundary
+    // of the admissible region, which the objective gap alone does not
+    // directly name as "a constraint is active" versus "the model simply
+    // fits this data less well".
+    EXPECT_GT(bounded.active_constraints, 0u)
+        << "the binding wing bound must show up as an active constraint";
 }
 
 TEST(SviCalibrator, DegradesToAFlatSliceRatherThanOverfitting) {

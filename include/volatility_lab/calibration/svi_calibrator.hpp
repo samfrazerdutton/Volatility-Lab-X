@@ -241,6 +241,16 @@ struct SviFitResult {
     /// two are not identified -- which the objective value alone cannot show.
     double grid_objective_range = 0.0;
 
+    /// Number of admissibility constraints active at the best inner solve
+    /// (`SviInnerSolve::active_constraints`, carried up from whichever
+    /// `(m, sigma)` won) -- 0 means the unconstrained quasi-explicit
+    /// optimum was already admissible; a nonzero count means the fit is
+    /// sitting on the boundary of the admissible region (e.g. the Lee wing
+    /// bound), which `grid_objective_range` alone does not show. Always 0
+    /// for `calibrate_svi_slice_direct`, whose unconstrained LM formulation
+    /// has no active-set concept.
+    std::size_t active_constraints = 0;
+
     ButterflyCheck butterfly;
     DiagnosticSink diagnostics;
 

@@ -104,3 +104,4 @@ vl_add_test(runtime incremental_engine)
 # --- kernels -----------------------------------------------------------------
 vl_add_test(kernels erfcx_poly)
 vl_add_test(kernels erfcx_avx2)
+vl_add_test(kernels parallel_reduce)

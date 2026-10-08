@@ -218,4 +218,15 @@ struct WeightBreakdown {
 [[nodiscard]] double quote_residual_dw(const OptionQuote& q, double model_total_variance,
                                        ResidualKind kind) noexcept;
 
+/// Half-spread converted into volatility points: `0.5*(ask-bid)/vega`, with a
+/// wide (not tight) fallback when there is no two-sided market or vega has
+/// underflowed. See `WeightConfig::min_half_spread_vol`.
+///
+/// Exposed (rather than kept file-local to the weighting pipeline) because
+/// the uncertainty engine (`risk/uncertainty.hpp`) needs exactly this same
+/// per-quote conversion to aggregate local vol noise, and a second
+/// independent implementation of "half-spread in vol points" is a second
+/// place for the vega-sign/fallback convention to drift from this one.
+[[nodiscard]] double half_spread_in_vol(const OptionQuote& q, const WeightConfig& cfg) noexcept;
+
 }  // namespace vl

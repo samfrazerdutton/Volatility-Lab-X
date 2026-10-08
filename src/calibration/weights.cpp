@@ -10,8 +10,6 @@
 
 namespace vl {
 
-namespace {
-
 /// Half-spread converted into volatility points.
 ///
 /// The conversion is the whole point of the spread weight: a half-spread of
@@ -35,6 +33,8 @@ double half_spread_in_vol(const OptionQuote& q, const WeightConfig& cfg) noexcep
     }
     return std::max(half_price / q.vega, cfg.min_half_spread_vol);
 }
+
+namespace {
 
 double liquidity_factor(const OptionQuote& q, const WeightConfig& cfg) noexcept {
     // Square root rather than linear: the penalty should be gentle, because a

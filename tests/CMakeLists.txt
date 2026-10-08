@@ -84,3 +84,6 @@ vl_add_test(portfolio portfolio)
 
 # --- diagnostics ---------------------------------------------------------
 vl_add_test(diagnostics surface_differential)
+
+# --- risk ------------------------------------------------------------------
+vl_add_test(risk uncertainty)

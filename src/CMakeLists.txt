@@ -43,6 +43,9 @@ set(VL_SOURCES
 
     # --- phase 5-flagship: surface differential engine -----------------------
     diagnostics/surface_differential.cpp
+
+    # --- phase 7: uncertainty-aware volatility -------------------------------
+    risk/uncertainty.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

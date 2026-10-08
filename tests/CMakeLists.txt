@@ -57,6 +57,9 @@ endfunction()
 # --- property ----------------------------------------------------------------
 vl_add_test(property core_invariants)
 
+# --- fuzz --------------------------------------------------------------------
+vl_add_test(fuzz numerical_fuzz)
+
 # --- unit ------------------------------------------------------------------
 vl_add_test(unit types)
 vl_add_test(unit diagnostics)

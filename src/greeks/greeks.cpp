@@ -12,12 +12,38 @@ namespace vl {
 using math::norm_cdf_hp;
 using math::norm_pdf;
 
+namespace {
+
+/// Every field NaN, not just price: a caller that reads `g.delta` after an
+/// invalid input seeing a plausible-looking `0.0` (the default-constructed
+/// value) rather than NaN would have no signal that anything was wrong.
+/// Found by fuzzing (tests/fuzz/numerical_fuzz.cpp) against the *other*
+/// gap this helper also fixes -- see its call sites below.
+OptionGreeks nan_greeks() noexcept {
+    constexpr double n = std::numeric_limits<double>::quiet_NaN();
+    return OptionGreeks{n, n, n, n, n, n, n, n, n, n};
+}
+
+}  // namespace
+
 OptionGreeks black_scholes_greeks(double spot, double strike, double vol, double years,
                                   double rate, double carry, OptionType type) noexcept {
     OptionGreeks g{};
     if (!(spot > 0.0) || !(strike > 0.0) || !std::isfinite(rate) || !std::isfinite(carry)) {
-        g.price = std::numeric_limits<double>::quiet_NaN();
-        return g;
+        return nan_greeks();
+    }
+    // NaN vol/years must propagate as "unknown", not be folded into the
+    // T->0/sigma->0 *limit* handling just below: that limit has a genuine,
+    // well-defined answer (the option is worth its intrinsic), which is a
+    // specific, confident claim NaN does not entitle this function to
+    // make. The `!(x > 0.0)` idiom just below is written that way
+    // specifically so it *also* catches NaN (a deliberate, common idiom
+    // for "reject non-positive-or-NaN"), which is exactly how a NaN vol
+    // ended up silently answering "the price is the discounted intrinsic"
+    // instead of "I don't know" -- found by fuzzing, not assumed; fixed by
+    // checking NaN explicitly, first.
+    if (std::isnan(vol) || std::isnan(years)) {
+        return nan_greeks();
     }
 
     const double w = payoff_sign(type);
@@ -88,9 +114,7 @@ OptionGreeks black_scholes_greeks_forward(double forward, double strike, double 
     // would otherwise have to invert back to a spot -- here that inversion is
     // done once, centrally, instead of ad hoc at every call site.
     if (!(forward > 0.0) || !(discount > 0.0) || !(years > 0.0)) {
-        OptionGreeks g{};
-        g.price = std::numeric_limits<double>::quiet_NaN();
-        return g;
+        return nan_greeks();
     }
     // spot is a free choice here -- only F and DF are observable -- so fix
     // spot := forward and solve carry accordingly; this makes carry whatever

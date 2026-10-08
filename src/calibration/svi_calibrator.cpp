@@ -17,6 +17,7 @@ const char* to_string(SviFitStatus s) noexcept {
         case SviFitStatus::InnerSolveFailed:   return "inner-solve-failed";
         case SviFitStatus::NotAdmissible:      return "not-admissible";
         case SviFitStatus::ButterflyViolation: return "butterfly-violation";
+        case SviFitStatus::NonFiniteObjective: return "non-finite-objective";
     }
     return "?";
 }
@@ -446,6 +447,21 @@ SviFitResult calibrate_svi_slice(std::span<const OptionQuote> quotes,
     vol_errors(quotes, out.params, out.rms_vol_error, out.max_vol_error,
                out.rms_total_variance_error);
 
+    if (!std::isfinite(out.objective)) {
+        // The fitted parameters can be admissible (the projection above is
+        // unconditional) while the objective computed from the *input*
+        // quotes still overflows, if those quotes carry adversarial
+        // weight/total-variance values -- found by fuzzing
+        // (tests/fuzz/numerical_fuzz.cpp), not assumed. Reported
+        // explicitly rather than falling through to Ok with a non-finite
+        // objective the caller would have no reason to distrust.
+        out.status = SviFitStatus::NonFiniteObjective;
+        out.diagnostics.add(make_diag(DiagCode::CalibrationDidNotConverge, Severity::Error,
+                                      "slice", "objective", out.objective,
+                                      "fitted parameters are admissible but the objective "
+                                      "computed from the input quotes is not finite"));
+        return out;
+    }
     if (!svi_parameters_admissible(out.params)) {
         out.status = SviFitStatus::NotAdmissible;
         out.diagnostics.add(make_diag(DiagCode::ParameterAtBound, Severity::Error, "slice",

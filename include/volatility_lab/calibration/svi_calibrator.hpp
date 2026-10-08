@@ -206,10 +206,22 @@ struct SviCalibratorConfig {
 enum class SviFitStatus : std::uint8_t {
     Ok = 0,
     TooFewQuotes,
-    DegradedToFlat,     ///< not enough quotes for a shape; fitted a level only
-    InnerSolveFailed,   ///< every active set in the inner problem was degenerate
-    NotAdmissible,      ///< the best fit found is not an admissible slice
-    ButterflyViolation  ///< fitted, but the slice has negative density somewhere
+    DegradedToFlat,      ///< not enough quotes for a shape; fitted a level only
+    InnerSolveFailed,    ///< every active set in the inner problem was degenerate
+    NotAdmissible,       ///< the best fit found is not an admissible slice
+    ButterflyViolation,  ///< fitted, but the slice has negative density somewhere
+
+    /// The fitted parameters themselves are admissible, but the objective
+    /// computed from the input quotes is not finite -- found by fuzzing
+    /// with adversarial (not merely noisy) quote weights/total-variance
+    /// values: `svi_project_to_admissible` unconditionally projects
+    /// parameters into a bounded region regardless of how the data looked,
+    /// so a slice can pass `svi_parameters_admissible` while the objective
+    /// itself, computed directly from the (insane) input quotes, overflows.
+    /// Reported explicitly rather than silently calling that `Ok` --
+    /// exactly the "if a calibration fails, the caller must know why"
+    /// requirement this status exists to satisfy.
+    NonFiniteObjective
 };
 
 [[nodiscard]] const char* to_string(SviFitStatus s) noexcept;

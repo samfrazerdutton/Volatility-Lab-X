@@ -68,6 +68,9 @@ vl_add_test(numerical interpolation)
 vl_add_test(numerical slice_models)
 vl_add_test(numerical surface)
 
+# --- core -------------------------------------------------------------------
+vl_add_test(core dependency_graph)
+
 # --- calibration -----------------------------------------------------------
 vl_add_test(calibration market_data)
 vl_add_test(calibration svi_calibrator)

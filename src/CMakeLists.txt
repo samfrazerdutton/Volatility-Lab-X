@@ -12,6 +12,7 @@
 set(VL_SOURCES
     # --- phase 1: core -----------------------------------------------------
     core/diagnostics.cpp
+    core/dependency_graph.cpp
     ${PROJECT_BINARY_DIR}/generated/build_info.cpp
 
     # --- phase 2: special functions, Black, implied volatility -------------

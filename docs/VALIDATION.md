@@ -119,19 +119,29 @@ test, say so, and say why, rather than silently relaxing it.
 
 ## Sanitizers
 
-- **AddressSanitizer**: `core/thread_pool.hpp`'s full test suite
-  (`tests/core/thread_pool.cpp`) runs clean (no memory errors, no leaks)
-  under `-DVL_ENABLE_ASAN=ON` (the `asan` CMake preset). Verified directly
-  this session, not assumed.
+- **AddressSanitizer**: the **full** test suite (all 32 binaries, not
+  just `thread_pool`) runs clean -- no memory errors, no leaks -- under
+  `-DVL_ENABLE_ASAN=ON`. This needed a real fix to the `asan` preset
+  first (Phase 2): it previously built with `CMAKE_BUILD_TYPE=Debug`,
+  and Clang's ASan runtime together with the Windows **Debug** CRT
+  (`ucrtbased.dll`/`MSVCP140D.dll`) both try to manage the heap at
+  process exit on this exact toolchain, which aborted as a "bad-free"
+  inside the CRT's own teardown code -- reproduced on `test_types`, a
+  trivial, unmodified test with zero user-code frames in the crash
+  stack, confirming it was an environment interaction and not a bug in
+  this project. Fixed by changing the preset to
+  `CMAKE_BUILD_TYPE=RelWithDebInfo` (the Release CRT, which does not
+  have this conflict) -- re-verified clean on all 32 tests after the
+  change, not assumed from the single-test probe alone.
 - **ThreadSanitizer**: attempted (`-DVL_ENABLE_TSAN=ON`, the `tsan`
   preset) and found **unavailable** for the `x86_64-pc-windows-msvc`
   target on this Clang build (`clang++: error: unsupported option
   '-fsanitize=thread' for target 'x86_64-pc-windows-msvc'`) -- a real
   toolchain limitation, stated here rather than silently skipped or
   claimed as passing.
-- **UndefinedBehaviorSanitizer**: wired into the same `asan` preset
-  (ASan+UBSan combined); not yet run as a dedicated pass separate from
-  ASan at the time of writing.
+- **UndefinedBehaviorSanitizer**: runs in the same `asan` preset pass
+  (ASan+UBSan combined, not separated) -- the all-clean result above
+  includes UBSan's checks, not only ASan's.
 
 ## Reproducing a validation claim
 

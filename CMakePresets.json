@@ -43,10 +43,10 @@
     {
       "name": "asan",
       "displayName": "AddressSanitizer",
-      "description": "Debug build with ASan+UBSan. Needs the sanitizer runtime DLL directory on PATH at run time on Windows -- see docs/BASELINE.md.",
+      "description": "RelWithDebInfo build with ASan+UBSan (deliberately NOT CMAKE_BUILD_TYPE=Debug: Clang's ASan runtime and the Windows Debug CRT (ucrtbased.dll/MSVCP140D.dll) both try to manage the heap at process exit on this toolchain, which aborts as a 'bad-free' inside the CRT's own teardown code on every binary -- reproduced on trivial, unmodified tests, so it is an environment interaction, not a real bug; see docs/VALIDATION.md). Needs the sanitizer runtime DLL directory on PATH at run time on Windows -- see docs/BASELINE.md.",
       "inherits": "base",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "VL_ENABLE_ASAN": "ON",
         "VL_ENABLE_UBSAN": "ON"
       }

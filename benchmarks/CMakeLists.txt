@@ -24,5 +24,12 @@ endif()
 # bench_incremental_scaling links alloc_counter.cpp, which overrides the
 # global operator new/delete -- scoped to this one executable only (see
 # alloc_counter.hpp). No other target links that file.
-add_executable(bench_incremental_scaling incremental_scaling.cpp alloc_counter.cpp)
-target_link_libraries(bench_incremental_scaling PRIVATE volatility_lab vl_compiler_flags)
+#
+# Not built under ASan: AddressSanitizer installs its own global
+# operator new/delete, and a second override in the same binary is a
+# duplicate-symbol link error, not a runnable combination -- ASan's own
+# allocation tracking supersedes this benchmark-only counter anyway.
+if(NOT VL_ENABLE_ASAN)
+    add_executable(bench_incremental_scaling incremental_scaling.cpp alloc_counter.cpp)
+    target_link_libraries(bench_incremental_scaling PRIVATE volatility_lab vl_compiler_flags)
+endif()

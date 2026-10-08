@@ -162,6 +162,21 @@ inline constexpr Tolerance kImpliedVol{2e-15, 1e-14,
 inline constexpr Tolerance kSimdEquivalence{0.0, 4.0 * kEps,
                                             "FMA contraction + vector polynomial erfc"};
 
+/// `kernels::scalar::erfcx_poly` (the branch-light Numerical Recipes
+/// rational approximation, `kernels/scalar/erfcx_poly.hpp`) against the
+/// double-double reference. The published claim is fractional error under
+/// 1.2e-7; independently re-measured in `tests/kernels/erfcx_poly.cpp` at
+/// ~1.045e-7 across [-10, 10] plus extreme/boundary points, which is what
+/// this budget is set from -- not the citation.  This is orders of
+/// magnitude looser than `kSimdEquivalence` deliberately: that tolerance is
+/// for "does the AVX2 kernel reproduce *this same* polynomial", this one is
+/// for "how close is the polynomial itself to the true value" -- two
+/// different questions with two different, independently justified
+/// budgets.
+inline constexpr Tolerance kErfcxPoly{1e-300, 1.5e-7,
+                                      "Numerical Recipes rational approximation; "
+                                      "measured ~1.045e-7 max relative error"};
+
 /// Parallel vs serial reduction.  This one *is* bitwise, by construction: the
 /// chunk decomposition is fixed by input size, not thread count, and partials
 /// combine in index order.  Stated as a tolerance of exactly zero so that a

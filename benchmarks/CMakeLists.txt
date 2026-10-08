@@ -12,3 +12,9 @@ target_link_libraries(bench_scalar_baseline PRIVATE volatility_lab vl_compiler_f
 
 add_executable(bench_simd_erfcx simd_erfcx.cpp)
 target_link_libraries(bench_simd_erfcx PRIVATE volatility_lab vl_compiler_flags)
+
+add_executable(bench_million_state million_state.cpp)
+target_link_libraries(bench_million_state PRIVATE volatility_lab vl_compiler_flags)
+if(WIN32)
+    target_link_libraries(bench_million_state PRIVATE psapi)
+endif()

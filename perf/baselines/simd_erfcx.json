@@ -1,0 +1,9 @@
+{
+  "benchmark": "simd_erfcx",
+  "n": 100000,
+  "host_cpu": "8 core AMD Ryzen 9 4900HS with Radeon Graphics",
+  "simd_build_level": "AVX2+FMA (-mavx2 -mfma)",
+  "scalar_ns_per_op": 30.4792,
+  "avx2_ns_per_op": 8.44638,
+  "measured_speedup": 3.60856
+}

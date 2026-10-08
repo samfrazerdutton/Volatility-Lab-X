@@ -10,8 +10,10 @@
 add_executable(bench_scalar_baseline scalar_baseline.cpp)
 target_link_libraries(bench_scalar_baseline PRIVATE volatility_lab vl_compiler_flags)
 
-add_executable(bench_simd_erfcx simd_erfcx.cpp)
-target_link_libraries(bench_simd_erfcx PRIVATE volatility_lab vl_compiler_flags)
+if(VL_ENABLE_SIMD)
+    add_executable(bench_simd_erfcx simd_erfcx.cpp)
+    target_link_libraries(bench_simd_erfcx PRIVATE volatility_lab vl_compiler_flags)
+endif()
 
 add_executable(bench_million_state million_state.cpp)
 target_link_libraries(bench_million_state PRIVATE volatility_lab vl_compiler_flags)

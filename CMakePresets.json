@@ -1,0 +1,134 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "VL_BUILD_EXAMPLES": "OFF",
+        "VL_BUILD_CLI": "OFF"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "description": "Unoptimised, full debug info. No sanitizer (combine with asan/ubsan presets for that).",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimised, no debug info -- for benchmarking and shipping.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "RelWithDebInfo (default)",
+      "description": "Optimised with debug info -- this project's own default build type (see CMakeLists.txt) and what every benchmark/baseline document in docs/ was measured with.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer",
+      "description": "Debug build with ASan+UBSan. Needs the sanitizer runtime DLL directory on PATH at run time on Windows -- see docs/BASELINE.md.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VL_ENABLE_ASAN": "ON",
+        "VL_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "description": "Debug build with TSan. Not supported for the x86_64-pc-windows-msvc target on at least one Clang build this project was developed with (see docs/BASELINE.md) -- configures cleanly, may fail to compile on that toolchain.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VL_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "benchmark",
+      "displayName": "Benchmark",
+      "description": "Release build with benchmarks on, examples/CLI off until those are populated.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VL_BUILD_BENCHMARKS": "ON",
+        "VL_BUILD_EXAMPLES": "OFF",
+        "VL_BUILD_CLI": "OFF"
+      }
+    },
+    {
+      "name": "portable",
+      "displayName": "Portable (no AVX2)",
+      "description": "SIMD kernels off -- for a machine without AVX2. The library and every test/benchmark must still build and pass; only the AVX2-specific kernel tests (tests/kernels/erfcx_avx2.cpp) are skipped by this flag going to OFF.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "VL_ENABLE_SIMD": "OFF"
+      }
+    },
+    {
+      "name": "native",
+      "displayName": "Native (-march=native)",
+      "description": "Non-portable: compiled for this exact machine's CPU. Never the build other machines' measurements are compared against.",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VL_ENABLE_NATIVE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "relwithdebinfo", "configurePreset": "relwithdebinfo" },
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "tsan", "configurePreset": "tsan" },
+    { "name": "benchmark", "configurePreset": "benchmark" },
+    { "name": "portable", "configurePreset": "portable" },
+    { "name": "native", "configurePreset": "native" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "relwithdebinfo",
+      "configurePreset": "relwithdebinfo",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "portable",
+      "configurePreset": "portable",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

@@ -137,6 +137,21 @@ was found, not reconstructed from memory:
   quasi-explicit 2-D-grid-plus-closed-form-inner-solve reduction removes the
   dependency on a starting guess entirely rather than mitigating it with
   more starts.
+- **`IncrementalEngine::apply_event` dropping quote metadata on update**
+  (`src/runtime/incremental_engine.cpp`) — an update to an *already-known*
+  instrument built a brand-new, default-constructed `OptionQuote`, silently
+  zeroing `volume`/`open_interest`/`age_seconds` (fields a `MarketEvent`
+  has no data for at all, but which `assign_weights_by_slice`'s liquidity
+  factor reads directly). The touched quote's calibration weight then
+  diverged from a fresh rebuild of the same final quotes, by enough to move
+  portfolio PnL ~$20 — found by `apps/cli`'s engineering demo, not by the
+  existing test suite, because the pre-existing exact-match test's fixed
+  quote index happened to have zero volume/open_interest already. Fixed by
+  starting from the existing stored quote and overwriting only the fields a
+  `MarketEvent` actually carries; permanent coverage via
+  `ApplyEventOnAnExistingQuotePreservesVolumeAndOpenInterest`, which
+  deliberately picks a quote with nonzero volume/open_interest so an
+  unlucky index cannot hide this class of bug again.
 
 Future work on this codebase must not regress any of these — in several
 cases (variance/vol-space confusion, event-detector specificity, the

@@ -98,3 +98,4 @@ vl_add_test(scenarios scenario)
 # --- runtime -----------------------------------------------------------------
 vl_add_test(runtime market_event)
 vl_add_test(runtime replay)
+vl_add_test(runtime incremental_engine)

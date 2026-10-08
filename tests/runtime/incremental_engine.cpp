@@ -1,0 +1,261 @@
+// SPDX-License-Identifier: MIT
+/// Validates the runtime dependency graph (directive Phase 2, section 6):
+/// that a quote event dirties exactly its own expiry slice and everything
+/// downstream of the surface (and nothing else), that the reported
+/// recompute counts are real (not fabricated), that an incrementally
+/// updated engine matches a freshly-built one from the same final quotes
+/// *exactly*, and that a market-point-only change never recalibrates
+/// anything (the sticky-moneyness/forward-orthogonality finding this
+/// project has already made three times elsewhere, reused here).
+
+#include "vl_test_support.hpp"
+
+#include "volatility_lab/runtime/incremental_engine.hpp"
+
+#include "volatility_lab/io/synthetic_market.hpp"
+#include "volatility_lab/options/normalize.hpp"
+
+#include <cmath>
+
+using namespace vl;
+
+namespace {
+
+VolSurface make_baseline_surface() {
+    std::vector<SliceVariant> slices;
+    for (double T : {1.0 / 12.0, 0.25, 0.5, 1.0, 2.0}) {
+        SviParams p;
+        p.years = T;
+        p.b = 0.08;
+        p.rho = -0.4;
+        p.m = 0.0;
+        p.sigma = 0.13;
+        p.a = 0.20 * 0.20 * T - p.b * std::sqrt(p.m * p.m + p.sigma * p.sigma);
+        slices.emplace_back(svi_project_to_admissible(p));
+    }
+    return VolSurface(std::move(slices), TermCurve::flat(100.0), TermCurve::flat(1.0));
+}
+
+struct Fixture {
+    SyntheticMarket market;
+    std::vector<OptionQuote> quotes;
+    IncrementalEngine::Config config;
+};
+
+Fixture make_fixture() {
+    Fixture f;
+    f.market = generate_market(MarketRegime::Normal);
+    auto norm = normalize(f.market.snapshot);
+    (void)assign_weights_by_slice(norm.quotes);
+    f.quotes = std::move(norm.quotes);
+
+    f.config.baseline_surface = make_baseline_surface();
+    f.config.baseline_market = MarketPoint{f.market.snapshot.spot, 0.03, 0.0};
+    f.config.positions = {
+        {"long_call_atm", 10.0, 100.0, f.market.snapshot.spot, 0.25, OptionType::Call},
+        {"short_put_otm", -5.0, 100.0, f.market.snapshot.spot * 0.9, 0.25, OptionType::Put},
+        {"long_call_1y", 8.0, 100.0, f.market.snapshot.spot * 1.1, 1.0, OptionType::Call},
+    };
+    return f;
+}
+
+MarketEvent make_tick(const OptionQuote& q, double bump) {
+    return MarketEvent{
+        SequenceNumber{1},  Timestamp{1000},
+        "SPX",              "instr",
+        Years{q.years},      Strike{q.strike},
+        q.type,              MarketEventType::Quote,
+        Money{q.bid + bump}, Money{q.ask + bump},
+        Money{q.mid + bump}, 10.0,
+    };
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// Construction
+// ---------------------------------------------------------------------------
+
+TEST(IncrementalEngine, ConstructionFullyRecomputesAndEndsClean) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    EXPECT_TRUE(engine.all_clean());
+    EXPECT_GT(engine.surface().num_slices(), 0u);
+    EXPECT_EQ(engine.position_valuations().size(), f.config.positions.size());
+}
+
+TEST(IncrementalEngine, TotalNodeCountAccountsForEveryExpiryPlusFixedNodes) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    std::size_t distinct_years = 0;
+    {
+        std::vector<double> seen;
+        for (const auto& q : f.quotes) {
+            bool found = false;
+            for (double y : seen) {
+                if (std::abs(y - q.years) < 1e-9) { found = true; break; }
+            }
+            if (!found) seen.push_back(q.years);
+        }
+        distinct_years = seen.size();
+    }
+    // expiries + surface + differential + uncertainty + positions + portfolio + pnl
+    const std::size_t expected = distinct_years + 1 + 1 + 1 + f.config.positions.size() + 1 + 1;
+    EXPECT_EQ(engine.node_count(), expected);
+}
+
+// ---------------------------------------------------------------------------
+// Minimal invalidation: the central claim
+// ---------------------------------------------------------------------------
+
+TEST(IncrementalEngine, UnknownExpiryIsRejectedAndChangesNothing) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    ASSERT_TRUE(engine.all_clean());
+
+    MarketEvent evt{
+        SequenceNumber{1}, Timestamp{1}, "SPX", "x", Years{99.0},  // no such expiry
+        Strike{100.0},     OptionType::Call,       MarketEventType::Quote,
+        Money{1.0},        Money{1.1},              Money{1.05},   1.0,
+    };
+    const auto result = engine.apply_event(evt);
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error(), RuntimeError::UnknownExpiry);
+    EXPECT_TRUE(engine.all_clean()) << "a rejected event must not dirty anything";
+}
+
+TEST(IncrementalEngine, OneQuoteTickDirtiesExactlyItsExpiryAndEverythingDownstreamOfSurface) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    ASSERT_TRUE(engine.all_clean());
+
+    const auto& q0 = f.quotes[10];
+    ASSERT_TRUE(engine.apply_event(make_tick(q0, 0.5)).has_value());
+
+    const auto report = engine.recompute();
+    EXPECT_TRUE(engine.all_clean());
+
+    // Dirty set must be: 1 expiry-slice + surface + differential +
+    // uncertainty + every position + portfolio + pnl. Every OTHER expiry
+    // slice must be reused.
+    const std::size_t expected_recomputed = 1 + 1 + 1 + 1 + f.config.positions.size() + 1 + 1;
+    EXPECT_EQ(report.recomputed_nodes, expected_recomputed);
+    EXPECT_EQ(report.total_nodes, engine.node_count());
+    EXPECT_EQ(report.reused_nodes, report.total_nodes - report.recomputed_nodes);
+    EXPECT_GT(report.reused_nodes, 0u) << "at least one other expiry must have been reused";
+    EXPECT_NEAR(report.fraction_avoided(),
+                static_cast<double>(report.reused_nodes) / static_cast<double>(report.total_nodes),
+                1e-12);
+}
+
+TEST(IncrementalEngine, RecomputeWithNothingDirtyDoesZeroWork) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    const auto report = engine.recompute();  // nothing changed since construction's own recompute
+    EXPECT_EQ(report.recomputed_nodes, 0u);
+    EXPECT_EQ(report.reused_nodes, report.total_nodes);
+    EXPECT_DOUBLE_EQ(report.fraction_avoided(), 1.0);
+}
+
+// ---------------------------------------------------------------------------
+// Correctness: incremental must match a fresh full rebuild, exactly
+// ---------------------------------------------------------------------------
+
+TEST(IncrementalEngine, IncrementalUpdateMatchesAFreshFullRebuildExactly) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+
+    const auto& q0 = f.quotes[10];
+    ASSERT_TRUE(engine.apply_event(make_tick(q0, 0.5)).has_value());
+    engine.recompute();
+
+    // A second engine, built from scratch, with the same quote already
+    // bumped in the initial book -- no incremental path involved at all.
+    std::vector<OptionQuote> bumped_quotes = f.quotes;
+    for (auto& q : bumped_quotes) {
+        if (std::abs(q.years - q0.years) < 1e-9 && std::abs(q.strike - q0.strike) < 1e-6 &&
+            q.type == q0.type) {
+            q.bid += 0.5;
+            q.ask += 0.5;
+            q.mid += 0.5;
+        }
+    }
+    IncrementalEngine fresh(bumped_quotes, f.config);
+
+    EXPECT_NEAR(engine.pnl().total_exact_pnl, fresh.pnl().total_exact_pnl, 1e-9);
+    EXPECT_NEAR(engine.portfolio().delta, fresh.portfolio().delta, 1e-9);
+    EXPECT_NEAR(engine.portfolio().vega, fresh.portfolio().vega, 1e-9);
+    EXPECT_NEAR(engine.surface().vol(0.0, 0.25), fresh.surface().vol(0.0, 0.25), 1e-12);
+    EXPECT_NEAR(engine.differential().level_shift, fresh.differential().level_shift, 1e-9);
+}
+
+TEST(IncrementalEngine, UntouchedExpirySlicesAreBitIdenticalAfterAnUnrelatedUpdate) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    const auto before = engine.surface().slice(0);  // whichever is first (shortest expiry)
+
+    const auto& q0 = f.quotes[10];
+    const double q0_years = q0.years;
+    ASSERT_TRUE(engine.apply_event(make_tick(q0, 0.5)).has_value());
+    engine.recompute();
+
+    // Find the same expiry in the (possibly larger) surface again.
+    const auto expiries = engine.surface().expiries();
+    ASSERT_FALSE(expiries.empty());
+    if (std::abs(expiries[0] - q0_years) > 1e-9) {
+        // The touched expiry was not the first slice -- confirm the first
+        // slice's params are untouched, bit for bit.
+        const auto& after = engine.surface().slice(0);
+        const auto& p_before = std::get<SviParams>(before);
+        const auto& p_after = std::get<SviParams>(after);
+        EXPECT_EQ(p_before.a, p_after.a);
+        EXPECT_EQ(p_before.b, p_after.b);
+        EXPECT_EQ(p_before.rho, p_after.rho);
+        EXPECT_EQ(p_before.m, p_after.m);
+        EXPECT_EQ(p_before.sigma, p_after.sigma);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Market-point updates never recalibrate (forward-orthogonality, reused)
+// ---------------------------------------------------------------------------
+
+TEST(IncrementalEngine, MarketPointUpdateDirtiesSurfaceButNeverAnExpirySlice) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    ASSERT_TRUE(engine.all_clean());
+
+    const auto before = engine.surface().slice(0);
+    MarketPoint bumped = engine.market();
+    bumped.spot *= 1.05;
+    engine.update_market_point(bumped);
+
+    const auto report = engine.recompute();
+    // surface + differential + uncertainty + positions + portfolio + pnl --
+    // no expiry slice in that count.
+    const std::size_t expected = 1 + 1 + 1 + f.config.positions.size() + 1 + 1;
+    EXPECT_EQ(report.recomputed_nodes, expected);
+
+    const auto& after = engine.surface().slice(0);
+    const auto& p_before = std::get<SviParams>(before);
+    const auto& p_after = std::get<SviParams>(after);
+    EXPECT_EQ(p_before.a, p_after.a);
+    EXPECT_EQ(p_before.b, p_after.b);
+    EXPECT_EQ(p_before.rho, p_after.rho);
+    EXPECT_EQ(p_before.m, p_after.m);
+    EXPECT_EQ(p_before.sigma, p_after.sigma);
+}
+
+TEST(IncrementalEngine, MarketPointUpdateMovesTheForwardCurve) {
+    const auto f = make_fixture();
+    IncrementalEngine engine(f.quotes, f.config);
+    const double old_forward = engine.surface().forwards()(0.25);
+
+    MarketPoint bumped = engine.market();
+    bumped.spot *= 1.10;
+    engine.update_market_point(bumped);
+    engine.recompute();
+
+    const double new_forward = engine.surface().forwards()(0.25);
+    EXPECT_NEAR(new_forward / old_forward, 1.10, 1e-9);
+}

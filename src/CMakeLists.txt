@@ -58,6 +58,7 @@ set(VL_SOURCES
     runtime/market_event.cpp
     runtime/state_hash.cpp
     runtime/replay.cpp
+    runtime/incremental_engine.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

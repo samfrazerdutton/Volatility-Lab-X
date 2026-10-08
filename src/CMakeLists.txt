@@ -50,6 +50,9 @@ set(VL_SOURCES
 
     # --- phase 8: incremental (online) calibration ---------------------------
     calibration/incremental.cpp
+
+    # --- phase 10: scenario graph ---------------------------------------------
+    scenarios/scenario.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

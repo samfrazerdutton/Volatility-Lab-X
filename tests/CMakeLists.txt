@@ -70,6 +70,7 @@ vl_add_test(numerical surface)
 
 # --- core -------------------------------------------------------------------
 vl_add_test(core dependency_graph)
+vl_add_test(core thread_pool)
 
 # --- calibration -----------------------------------------------------------
 vl_add_test(calibration market_data)

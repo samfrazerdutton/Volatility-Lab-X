@@ -48,6 +48,7 @@ set(VL_SOURCES
 
     # --- phase 7: uncertainty-aware volatility -------------------------------
     risk/uncertainty.cpp
+    risk/uncertainty_propagation.cpp
 
     # --- phase 8: incremental (online) calibration ---------------------------
     calibration/incremental.cpp

@@ -92,6 +92,7 @@ vl_add_test(diagnostics surface_differential)
 
 # --- risk ------------------------------------------------------------------
 vl_add_test(risk uncertainty)
+vl_add_test(risk uncertainty_propagation)
 
 # --- scenarios ---------------------------------------------------------------
 vl_add_test(scenarios scenario)

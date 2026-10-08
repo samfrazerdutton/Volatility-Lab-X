@@ -71,6 +71,7 @@ vl_add_test(numerical surface)
 # --- calibration -----------------------------------------------------------
 vl_add_test(calibration market_data)
 vl_add_test(calibration svi_calibrator)
+vl_add_test(calibration incremental)
 
 # --- pricing ---------------------------------------------------------------
 vl_add_test(pricing black)

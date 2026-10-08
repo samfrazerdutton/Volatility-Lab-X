@@ -46,6 +46,9 @@ set(VL_SOURCES
 
     # --- phase 7: uncertainty-aware volatility -------------------------------
     risk/uncertainty.cpp
+
+    # --- phase 8: incremental (online) calibration ---------------------------
+    calibration/incremental.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

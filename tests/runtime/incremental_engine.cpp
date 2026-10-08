@@ -15,6 +15,7 @@
 #include "volatility_lab/io/synthetic_market.hpp"
 #include "volatility_lab/options/normalize.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 using namespace vl;
@@ -187,6 +188,52 @@ TEST(IncrementalEngine, IncrementalUpdateMatchesAFreshFullRebuildExactly) {
     EXPECT_NEAR(engine.portfolio().vega, fresh.portfolio().vega, 1e-9);
     EXPECT_NEAR(engine.surface().vol(0.0, 0.25), fresh.surface().vol(0.0, 0.25), 1e-12);
     EXPECT_NEAR(engine.differential().level_shift, fresh.differential().level_shift, 1e-9);
+}
+
+// A real bug, found by the engineering demo (`apps/cli/main.cpp`), not by
+// this file: `apply_event` used to build a brand-new, default-constructed
+// `OptionQuote` for an instrument that already existed, which silently
+// zeroed `volume`/`open_interest`/`age_seconds` -- fields a `MarketEvent`
+// has no opinion on at all -- even though the slot already held real
+// values for them. `assign_weights_by_slice`'s liquidity factor reads
+// volume/open_interest directly, so the touched quote's calibration weight
+// differed from a fresh rebuild of the same final quotes, and the surface
+// for that one expiry (and everything downstream of it) came out wrong by
+// more than float noise.
+//
+// `IncrementalUpdateMatchesAFreshFullRebuildExactly` above did not catch
+// this: `f.quotes[10]` happens to have zero volume/open_interest in this
+// fixture's synthetic market, so resetting "zero" to "zero" is invisible.
+// This test picks a quote with nonzero volume and open_interest
+// specifically so the bug class cannot hide behind an unlucky index again.
+TEST(IncrementalEngine, ApplyEventOnAnExistingQuotePreservesVolumeAndOpenInterest) {
+    const auto f = make_fixture();
+
+    const auto liquid_it = std::find_if(f.quotes.begin(), f.quotes.end(), [](const OptionQuote& q) {
+        return q.volume > 0.0 && q.open_interest > 0.0;
+    });
+    ASSERT_NE(liquid_it, f.quotes.end())
+        << "fixture must contain at least one quote with real volume/open_interest "
+           "for this test to exercise anything";
+    const OptionQuote q0 = *liquid_it;
+
+    IncrementalEngine engine(f.quotes, f.config);
+    ASSERT_TRUE(engine.apply_event(make_tick(q0, 0.05)).has_value());
+    engine.recompute();
+
+    std::vector<OptionQuote> rebuilt_quotes = f.quotes;
+    for (auto& q : rebuilt_quotes) {
+        if (std::abs(q.years - q0.years) < 1e-9 && std::abs(q.strike - q0.strike) < 1e-6 &&
+            q.type == q0.type) {
+            q.bid += 0.05;
+            q.ask += 0.05;
+            q.mid += 0.05;
+        }
+    }
+    IncrementalEngine fresh(rebuilt_quotes, f.config);
+
+    EXPECT_NEAR(engine.pnl().total_exact_pnl, fresh.pnl().total_exact_pnl, 1e-9);
+    EXPECT_NEAR(engine.surface().vol(0.0, q0.years), fresh.surface().vol(0.0, q0.years), 1e-12);
 }
 
 TEST(IncrementalEngine, UntouchedExpirySlicesAreBitIdenticalAfterAnUnrelatedUpdate) {

@@ -125,7 +125,21 @@ Expected<std::monostate, RuntimeError> IncrementalEngine::apply_event(const Mark
     }
 
     const InstrumentKey key{event.expiry, event.strike, event.option_type};
-    OptionQuote q;
+    const auto idx_it = quote_index_by_instrument_.find(key);
+
+    // An update to a *known* instrument must start from its existing quote,
+    // not a blank one: `OptionQuote` carries fields a `MarketEvent` has no
+    // opinion on at all (volume, open_interest, age_seconds, last, style,
+    // source_index, slice_index), and `assign_weights_by_slice`'s liquidity
+    // factor reads volume/open_interest directly. Building a fresh,
+    // default-constructed `OptionQuote` here silently zeroed those out,
+    // changing that one quote's calibration weight relative to a full
+    // rebuild from the same final quotes -- found because the engineering
+    // demo's incremental-vs-full-rebuild PnL differed by ~$20, far outside
+    // the 1e-9 bitwise-match guarantee `IncrementalUpdateMatchesAFreshFullRebuildExactly`
+    // already protects.
+    OptionQuote q = (idx_it != quote_index_by_instrument_.end()) ? quotes_[idx_it->second]
+                                                                  : OptionQuote{};
     q.strike = event.strike.value();
     q.years = years;
     q.type = event.option_type;
@@ -137,7 +151,6 @@ Expected<std::monostate, RuntimeError> IncrementalEngine::apply_event(const Mark
     q.dividend = market_.carry;
     q.status = QuoteStatus::Unvalidated;
 
-    const auto idx_it = quote_index_by_instrument_.find(key);
     if (idx_it != quote_index_by_instrument_.end()) {
         quotes_[idx_it->second] = q;
     } else {

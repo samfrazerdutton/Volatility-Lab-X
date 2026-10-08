@@ -174,3 +174,89 @@ already-tested function responsible for that piece of the pipeline
 exactly the "wire the existing functions into nodes of the existing
 DependencyGraph" plan this section originally described, not a new graph
 structure or new math.
+
+## Phase 2: performance engineering of the incremental runtime
+
+### Data-flow and execution layers
+
+```
+MarketEvent
+    |
+    v
+QuoteStore (InstrumentKey -> index, via quote_index_by_instrument_;
+            expiry -> indices, via quote_indices_by_node_)
+    |
+    v
+Dirty detection (find_expiry_node, O(log E) binary search ->
+                 graph_.mark_dirty)
+    |
+    v
+Dependency graph (core/dependency_graph.hpp -- bookkeeping only)
+    |
+    v
+Scheduler (graph_.dirty_nodes_in_order() -- single-threaded today;
+           kernels/parallel + core/thread_pool.hpp exist but are not
+           wired into this path yet, see docs/BENCHMARKS.md)
+    |
+    v
+Calibration (calibrate_svi_slice, per dirty ExpirySlice only)
+    |
+    v
+Surface (VolSurface, reassembled from all slices)
+    |
+    v
+Greeks (value_position per PositionGreeks node)
+    |
+    v
+Portfolio -> Pnl
+```
+
+As a separate axis, not a pipeline stage -- which *implementation tier* a
+given numerical kernel runs through:
+
+```
+Scalar   (production formula: std::erfc/std::exp-based; always correct,
+          always available, the reference every other tier is checked
+          against)
+   |
+   v
+SIMD     (AVX2+FMA, [[gnu::target]]-scoped, not a compile-wide flag;
+          today: erfcx only -- black_scholes_price/greeks and implied-vol
+          helpers are scalar-only, see docs/BENCHMARKS.md's "what is
+          explicitly not in this document")
+   |
+   v
+Parallel (core/thread_pool.hpp + kernels/parallel/reduce.hpp exist and
+          are independently benchmarked; not wired into
+          IncrementalEngine's calibration path -- a legitimate next
+          step, not claimed as done)
+```
+
+`IncrementalEngine` sits entirely in the top pipeline's "Calibration"
+stage and below it; the SIMD/Parallel execution-tier choice is orthogonal
+to it and, as of this phase, not yet exercised by it.
+
+### The indexed quote store replaced a real O(N) scan
+
+`IncrementalEngine::recompute_node`'s `ExpirySlice` case used to scan
+every stored quote to find the ones belonging to the one expiry being
+recomputed -- cost scaled with total book size, not with that expiry's
+own size, regardless of how large the rest of the book was.
+`quote_indices_by_node_` (one bucket of quote indices per `ExpirySlice`
+node, built once at construction, maintained incrementally by
+`apply_event`) replaced it; `apply_event`'s own expiry-node lookup also
+moved from a linear `std::find_if` scan to `find_expiry_node`'s O(log E)
+binary search over the already-ordered expiry map. Measured, not
+assumed -- full rebuild sped up 5.3x at ~500,000 quotes; see
+`docs/BENCHMARKS.md`'s "Incremental-engine scaling" table and
+`docs/INCREMENTAL_RUNTIME.md`'s "indexed quote store" section for the
+full before/after and the honest limit of what this fix did and did not
+address (`estimate_point_uncertainty`'s separate, by-design global scan
+still dominates single-quote-update latency at scale).
+
+Permanent regression coverage:
+`IncrementalEngine.SingleQuoteUpdateExaminesOnlyItsOwnExpiryNotTheWholeBook`
+(`tests/runtime/incremental_engine.cpp`) asserts `quotes_examined` stays
+under 10% of `quotes_total` on a many-expiry book; verified to actually
+fail against the old full-scan behaviour before being verified to pass
+against the fix.

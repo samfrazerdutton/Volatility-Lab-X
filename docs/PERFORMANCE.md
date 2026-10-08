@@ -85,3 +85,79 @@ have a stored baseline yet -- it has only been run once so far (see
 completes), and a baseline from a single observation, before knowing this
 project's own run-to-run variance on *this* specific benchmark, would be a
 number nobody has actually validated as "known good" yet.
+
+`incremental_scaling` (`bench_incremental_scaling`, Phase 2) is the
+scaling matrix behind `docs/BENCHMARKS.md`'s structural-bottleneck table;
+no stored baseline yet either, for the same reason -- it has one real run
+documented, not yet a validated "known good" to regress against.
+
+## How to reproduce a measurement using available tooling
+
+Every number in `docs/BENCHMARKS.md` was produced by one of the two
+methods below, on this project's own `RelWithDebInfo` build (`-O2
+-DNDEBUG -g`, debug info present specifically so a profiler can attribute
+samples to source lines) -- never a `Debug` build, whose `-O0` numbers do
+not describe anything a user would run.
+
+### 1. This project's own benchmark binaries (what every number in this phase actually used)
+
+```bash
+cmake --preset relwithdebinfo    # or: cmake -S . -B build (flat, non-preset layout)
+cmake --build build
+./build/bin/bench_scalar_baseline.exe
+./build/bin/bench_simd_erfcx.exe
+./build/bin/bench_incremental_scaling.exe [--million]
+./build/bin/bench_million_state.exe
+```
+
+Each uses `std::chrono::steady_clock` around the actual call, a warm-up
+pass where the kernel is cheap enough that JIT/cache warm-up would
+otherwise dominate, and prints the host CPU/compiler/build type/SIMD mode
+it ran under (`core/build_info.hpp`) so a number is never read without
+knowing what produced it.
+
+### 2. External profilers, for *why* a hot path is hot (not used to produce the headline numbers above, but how a slow path in this codebase should be investigated further)
+
+**Windows** (this project's primary development platform):
+
+- **Visual Studio Performance Profiler** (CPU Usage tool): attach to, or
+  launch, a `RelWithDebInfo` build of any `bench_*`/`test_*`/
+  `volatility_lab_demo` binary; the embedded CodeView debug info
+  (`-Xclang -gcodeview`, already in this project's `RelWithDebInfo` flags)
+  lets it attribute samples down to source lines without a separate
+  symbol step.
+- **Windows Performance Recorder / Analyzer (WPA)**: for a system-wide
+  view (useful for the thread-pool work queued elsewhere in this phase) --
+  record a `wprr`/`wpr` trace while a benchmark runs, open it in WPA, and
+  filter to the benchmark's process name.
+
+**Linux** (if this project is ever built there -- the CMake presets are
+portable, only the Windows-specific `.pdb`/`windows.h` bits in
+`benchmarks/million_state.cpp`'s memory-reporting code are not):
+
+```bash
+perf record -g ./build/bin/bench_incremental_scaling
+perf report
+```
+
+**Optional, vendor-specific** (not used in this project's own measurements
+-- listed because this machine's CPU is an AMD part and a reader on Intel
+hardware has the equivalent tool available): Intel VTune Profiler (Intel
+CPUs) or AMD uProf (AMD CPUs, i.e. what this project's own numbers were
+taken on) for microarchitectural detail -- cache miss rates, branch
+mispredictions, memory bandwidth saturation -- beyond what wall-clock
+timing alone can distinguish. Phase 2's own "remaining bottlenecks"
+section in `docs/BENCHMARKS.md` names *what* was measured to be slow
+(`estimate_point_uncertainty`'s global kernel scan); a vendor profiler
+would be the next tool to reach for to confirm *why* (memory-bandwidth-
+versus compute-bound) before attempting to optimise it further -- not
+attempted in this phase, stated as a next step rather than guessed at.
+
+### What was actually measured this phase, with which method
+
+Every number in `docs/PERFORMANCE_BASELINE.md` and `docs/BENCHMARKS.md`
+came from method 1 above, run directly on this development machine (see
+`docs/PERFORMANCE_BASELINE.md`'s Environment table). Method 2 was not
+used to produce any number in this phase's documents -- it is documented
+here as the honest next step for investigating `estimate_point_uncertainty`
+further, not retroactively claimed as already done.

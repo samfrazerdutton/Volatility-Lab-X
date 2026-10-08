@@ -57,6 +57,80 @@ Two kinds of update, with deliberately different blast radii:
   forward sits, so recalibrating any slice in response to it would be
   wasted, shape-preserving work.
 
+## The indexed quote store (Phase 2)
+
+How a `MarketEvent` gets from "one quote changed" to "exactly this
+expiry's slice is recomputed" without ever touching the rest of the book:
+
+```
+MarketEvent
+    |
+    v
+InstrumentKey lookup (quote_index_by_instrument_, O(1) hash)
+    |                                  \
+    v                                   v
+existing instrument:               new instrument:
+overwrite quotes_[idx] in place    append to quotes_, append its index
+    |                               to quote_indices_by_node_[expiry]
+    v
+find_expiry_node(years) -- O(log E) binary search over the
+ordered expiry_node_by_years_ map (replaced a linear scan)
+    |
+    v
+graph_.mark_dirty(that one ExpirySlice node)
+    |
+    v
+recompute() walks the dirty set in dependency order; for the
+dirty ExpirySlice node, recompute_node reads
+quote_indices_by_node_[id] directly -- exactly that expiry's
+own quote slots, not a scan of quotes_
+    |
+    v
+Surface reassembles from all slices (cheap: one TermCurve build
+per axis) -> SurfaceDifferential / Uncertainty / PositionGreeks
+ -> Portfolio -> Pnl, whichever are downstream of what actually
+changed
+```
+
+Before this existed, `recompute_node`'s `ExpirySlice` case scanned every
+quote the engine held (`for (const auto& q : quotes_)`) to find the ones
+belonging to the one expiry being recomputed -- cost scaled with total
+book size, not with that expiry's own size. `quote_indices_by_node_`
+(a `std::vector<std::vector<std::size_t>>`, one bucket per `ExpirySlice`
+node id, directly indexable since those ids are a contiguous range
+starting at 0) is built once at construction and kept current by
+`apply_event`: an update to an *existing* instrument needs no index
+change (same slot, same expiry), and a *new* instrument is appended to
+both `quotes_` and its expiry's bucket.
+
+Measured, not assumed -- see `docs/BENCHMARKS.md`'s "Incremental-engine
+scaling" table for the full before/after. The short version: full rebuild
+sped up by 5.3x at ~500,000 quotes (the old scan was paid once *per
+expiry* during a full rebuild, an O(expiries x quotes) cost once both
+scale together), while single-quote update's improvement was smaller and
+revealed a second, different, by-design cost dominating at scale --
+`estimate_point_uncertainty`'s necessarily-global kernel scan, documented
+in `docs/BENCHMARKS.md` rather than mistaken for a remaining instance of
+this same bug.
+
+### The independent reference path: `runtime/full_rebuild.hpp`
+
+`IncrementalEngine`'s constructor already performs *a* full rebuild
+(every node starts dirty), but it does so through the same
+`DependencyGraph`/`NodeKind` machinery the incremental path uses -- a bug
+shared by both would not show up as a disagreement between them.
+`full_rebuild()` is a free function that recomputes everything from a
+quote book with **no** `DependencyGraph` involvement at all: a plain scan
+to group quotes by expiry (not an index -- being simple, not fast, is the
+point), then the same low-level pipeline functions
+(`calibrate_svi_slice`, `VolSurface`'s constructor,
+`compute_surface_differential`, `estimate_point_uncertainty`,
+`value_position`/`aggregate_greeks`, `compute_pnl_attribution`) called
+directly in sequence. `tests/runtime/full_rebuild.cpp` checks it against
+`IncrementalEngine` both at construction and after an incremental update,
+deliberately as a *separate* test file from the performance benchmark --
+correctness and speed are never asserted by the same comparison.
+
 ## A deliberate v1 scope limit
 
 `core/dependency_graph.hpp`'s `add_node` can create a new node with

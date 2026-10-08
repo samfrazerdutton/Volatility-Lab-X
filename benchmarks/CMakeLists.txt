@@ -9,3 +9,6 @@
 
 add_executable(bench_scalar_baseline scalar_baseline.cpp)
 target_link_libraries(bench_scalar_baseline PRIVATE volatility_lab vl_compiler_flags)
+
+add_executable(bench_simd_erfcx simd_erfcx.cpp)
+target_link_libraries(bench_simd_erfcx PRIVATE volatility_lab vl_compiler_flags)

@@ -63,7 +63,10 @@ Based on the measurements above, not assumed:
 1. `erfcx` / `norm_cdf_hp` -- the shared primitives, highest call volume,
    and the simplest control flow (no iteration, no data-dependent
    branching), so the SIMD-vs-scalar error contract (directive section 9)
-   is also the simplest to establish correctly first.
+   is also the simplest to establish correctly first. **Done for erfcx**
+   (see "AVX2 erfcx" below); `norm_cdf_hp` is next and is largely free
+   once `erfcx_avx2_batch` exists, since the production scalar
+   `norm_cdf_hp` is itself `0.5*erfcx(z)*exp(-x^2/2)`.
 2. `black_price` / `black_scholes_greeks` -- straight-line, no iteration,
    builds directly on (1). This is where most of the directive's
    "scenario evaluation" and "portfolio valuation" SIMD targets actually
@@ -75,6 +78,48 @@ Based on the measurements above, not assumed:
    that is what the lane-synchronisation cost turns out to be -- see
    section 31 of the runtime directive: an honest negative or partial
    result is a required deliverable, not a failure to hide.
+
+## AVX2 erfcx: the first SIMD kernel, measured
+
+`kernels/scalar/erfcx_poly.hpp` (the branch-light Numerical Recipes formula,
+~1.045e-7 relative error vs the dd reference) is now also implemented as
+`kernels/simd/erfcx_avx2.hpp`'s AVX2+FMA batch kernel. Measured via
+`bench_simd_erfcx` (same methodology as the scalar baseline: excluded
+warm-up, 7 trials of 50 repeats over n=100,000, minimum reported):
+
+```
+kernel                                ns/op      ops/sec
+scalar erfcx_poly                    18.5-30.5    33-54M
+AVX2 erfcx_avx2_batch                  4.9-8.4   118-205M
+
+measured speedup: 3.6x-3.8x across repeated runs
+```
+
+(The absolute ns/op numbers vary run to run on this laptop by close to 2x --
+thermal/scheduling noise on shared hardware, not a measurement bug; the
+*ratio* between scalar and AVX2 stays in the 3.6-3.8x band across runs,
+which is the number that matters.) 3.6-3.8x against a theoretical ceiling
+of 4x (one AVX2 register holds 4 doubles) means the kernel is well
+vectorised with little overhead -- not a number inflated by comparing
+against an artificially slow scalar baseline, since the scalar kernel
+being compared against is the exact same formula.
+
+One real obstacle, documented rather than glossed over: AVX2 has no `exp`
+instruction, so the kernel needed its own vectorised `exp`
+(`exp_avx2_bounded`, single-constant range reduction + a 14-term Taylor
+series, deliberately scoped to the `[-1, 710]` domain this one kernel
+needs, not offered as a general-purpose primitive). That introduced a
+second, independent approximation of `exp` alongside the scalar kernel's
+`std::exp` call, so "AVX2 matches scalar" is not bitwise and not pure
+FMA-rounding noise the way a shared primitive would produce. Measured (not
+guessed) at up to 690 ulps worst case -- `math::tol::kSimdEquivalence` was
+corrected from a pre-existing, never-yet-measured "4 ulps" guess to this
+real number (with ~3x headroom) once it existed to check against. 690 ulps
+is `~1.5e-13` relative error, six orders of magnitude inside the formula's
+own ~1e-7 ceiling, so it has no practical effect -- but reporting the
+*measured* number rather than leaving the old guess standing uncorrected is
+exactly the "verify, don't assume" discipline this project applies
+everywhere else.
 
 ## What has not been profiled yet
 

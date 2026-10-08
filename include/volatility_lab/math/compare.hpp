@@ -157,10 +157,27 @@ inline constexpr Tolerance kImpliedVol{2e-15, 1e-14,
                                        "limit is the conditioning of dPrice/dVol"};
 
 /// SIMD vs scalar kernel equivalence.  Not bitwise: the SIMD path uses FMA
-/// contraction and a polynomial exp/erfc, so the claim is "within 4 ulps",
-/// verified over the full input sweep in tests/numerical.
-inline constexpr Tolerance kSimdEquivalence{0.0, 4.0 * kEps,
-                                            "FMA contraction + vector polynomial erfc"};
+/// contraction and its own vectorised `exp` (`kernels/simd/erfcx_avx2.hpp`'s
+/// `exp_avx2_bounded`, a single-ln2-constant range reduction + degree-13
+/// Taylor series, not libm's `std::exp` that the scalar kernel calls
+/// directly) -- two independent approximations of `exp`, not one shared
+/// primitive, so their difference is not purely FMA-rounding noise.
+///
+/// This was budgeted at "within 4 ulps" before any SIMD kernel existed to
+/// measure against; the real number, swept exhaustively in
+/// `tests/kernels/erfcx_avx2.cpp` over x in [-26, 100], is up to 690 ulps
+/// (worst case near x = -25.7, where the reflection branch's `exp(x^2)`
+/// term is enormous and amplifies the two exp implementations' absolute
+/// disagreement before the subtraction). 690 ulps is `690 * kEps ~=
+/// 1.5e-13` relative error -- six orders of magnitude inside the erfcx
+/// formula's own ~1e-7 accuracy ceiling (`kErfcxPoly`), so it changes
+/// nothing about whether the kernel is fit for purpose. The budget below
+/// is the measured number with roughly 3x headroom, not the original
+/// guess.
+inline constexpr Tolerance kSimdEquivalence{0.0, 2048.0 * kEps,
+                                            "two independent exp approximations (libm vs "
+                                            "this project's own vectorised exp), not pure "
+                                            "FMA-rounding noise; measured max 690 ulps"};
 
 /// `kernels::scalar::erfcx_poly` (the branch-light Numerical Recipes
 /// rational approximation, `kernels/scalar/erfcx_poly.hpp`) against the

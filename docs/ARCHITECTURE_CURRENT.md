@@ -22,7 +22,8 @@ Every module below is marked:
 | Module | What it does |
 |---|---|
 | `runtime` (`market_event.hpp`, `state_hash.hpp`, `replay.hpp`, `incremental_engine.hpp`) | Deterministic market events (immutable, strictly-sequenced stream); a portable FNV-1a state fingerprint; deterministic replay (`MarketState` + per-step hashes, verified to match bit-for-bit across independent runs); and the real runtime dependency graph wiring `core/dependency_graph.hpp`'s bookkeeping to the actual pipeline (quote -> expiry slice -> surface -> {surface differential, uncertainty} -> position Greeks -> portfolio -> PnL), verified to produce results identical to a full rebuild and to recalibrate nothing on a pure market-point move. |
-| `benchmarks/` | No longer scaffold-only: `bench_scalar_baseline` measures `black_scholes_price`/`black_scholes_greeks`/`erfcx`/`norm_cdf_hp`/`implied_volatility` (see `docs/PERFORMANCE_ANALYSIS.md` for the numbers and what they imply for SIMD kernel prioritisation). `VL_BUILD_BENCHMARKS=ON` now configures cleanly from a fresh clone. |
+| `benchmarks/` | No longer scaffold-only: `bench_scalar_baseline` measures `black_scholes_price`/`black_scholes_greeks`/`erfcx`/`norm_cdf_hp`/`implied_volatility`; `bench_simd_erfcx` measures the scalar-vs-AVX2 erfcx speedup (3.6-3.8x measured). See `docs/PERFORMANCE_ANALYSIS.md`. `VL_BUILD_BENCHMARKS=ON` now configures cleanly from a fresh clone. |
+| `kernels/scalar/`, `kernels/simd/` | No longer scaffold-only (both were `if(EXISTS ...)`-guarded empty placeholders): `kernels/scalar/erfcx_poly.hpp` is the branch-light Numerical Recipes erfcx approximation (~1.045e-7 measured relative error vs the dd reference, its own `math::tol::kErfcxPoly` budget); `kernels/simd/erfcx_avx2.hpp` is the AVX2+FMA batch version of the same formula, including a small internal vectorised `exp` (AVX2 has no native one) scoped explicitly to the bounded domain this one kernel needs. `math::erfcx` itself is unchanged -- these are additional, independently-validated tiers, not a replacement. `kernels/parallel/` and `kernels/cuda/` remain empty. |
 
 ## Real modules (from the frozen baseline)
 
@@ -66,11 +67,13 @@ was designed to be: label-and-dirty-flag bookkeeping, not a scheduler;
 
 Still absent, as of this update: **a regime engine, a volatility factor
 engine, a cross-underlier engine, a surface health engine, a numerical-
-conditioning diagnostic layer, SIMD kernels (though the scalar baseline
-they will be compared against is now measured -- see
-`docs/PERFORMANCE_ANALYSIS.md`), a thread pool, a million-state benchmark,
-a performance-regression system, a CLI, Python bindings, and the research
-console.**
+conditioning diagnostic layer, a thread pool, a million-state benchmark, a
+performance-regression system, a CLI, Python bindings, and the research
+console.** SIMD kernels exist now for exactly one primitive (`erfcx`, both
+scalar-optimised and AVX2 tiers -- see "Added since the frozen baseline"
+above and `docs/PERFORMANCE_ANALYSIS.md`); `norm_cdf_hp`, `black_price`,
+`black_scholes_greeks`, and `implied_volatility` do not yet have SIMD
+tiers.
 
 ## Protected numerical regressions
 

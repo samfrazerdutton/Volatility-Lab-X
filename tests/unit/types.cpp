@@ -7,6 +7,7 @@
 
 #include "volatility_lab/core/types.hpp"
 
+#include <string>
 #include <type_traits>
 #include <unordered_map>
 
@@ -85,6 +86,53 @@ TEST(Types, PayoffSignEncodesTheBranchFreeMultiplier) {
     EXPECT_EQ(opposite(OptionType::Put), OptionType::Call);
     EXPECT_STREQ(to_string(OptionType::Call), "call");
     EXPECT_STREQ(to_string(OptionType::Put), "put");
+}
+
+// ---------------------------------------------------------------------------
+// InstrumentKey
+// ---------------------------------------------------------------------------
+
+TEST(InstrumentKey, EqualityComparesEveryField) {
+    const InstrumentKey a{Years{0.25}, Strike{100.0}, OptionType::Call};
+    const InstrumentKey same{Years{0.25}, Strike{100.0}, OptionType::Call};
+    const InstrumentKey diff_years{Years{0.5}, Strike{100.0}, OptionType::Call};
+    const InstrumentKey diff_strike{Years{0.25}, Strike{110.0}, OptionType::Call};
+    const InstrumentKey diff_type{Years{0.25}, Strike{100.0}, OptionType::Put};
+
+    EXPECT_TRUE(a == same);
+    EXPECT_FALSE(a == diff_years);
+    EXPECT_FALSE(a == diff_strike);
+    EXPECT_FALSE(a == diff_type);
+}
+
+TEST(InstrumentKey, IsUsableAsAnUnorderedMapKeyWithNoStringInvolved) {
+    // The whole point: this must work with zero std::string construction --
+    // the type itself is what proves that (double, double, enum) fields
+    // only, no string member to accidentally allocate from.
+    static_assert(!std::is_constructible_v<InstrumentKey, std::string, double, OptionType>);
+    std::unordered_map<InstrumentKey, int> m;
+    m[InstrumentKey{Years{0.25}, Strike{100.0}, OptionType::Call}] = 1;
+    m[InstrumentKey{Years{0.25}, Strike{105.0}, OptionType::Call}] = 2;
+    m[InstrumentKey{Years{1.0}, Strike{100.0}, OptionType::Put}] = 3;
+    EXPECT_EQ(m.size(), 3u);
+    EXPECT_EQ(m.at((InstrumentKey{Years{0.25}, Strike{100.0}, OptionType::Call})), 1);
+}
+
+TEST(InstrumentKey, DistinctKeysThatDifferOnlyByOptionTypeHashDifferently) {
+    // Not a correctness requirement on its own (a hash collision is always
+    // legal), but confirms the type field is actually mixed into the hash
+    // at all, rather than the implementation accidentally hashing only
+    // (years, strike) and relying on equality alone to disambiguate type.
+    const InstrumentKey call{Years{0.25}, Strike{100.0}, OptionType::Call};
+    const InstrumentKey put{Years{0.25}, Strike{100.0}, OptionType::Put};
+    EXPECT_FALSE(call == put);
+    EXPECT_NE(std::hash<InstrumentKey>{}(call), std::hash<InstrumentKey>{}(put));
+}
+
+TEST(InstrumentKey, IsTriviallyCopyableAndStandardLayout) {
+    static_assert(std::is_trivially_copyable_v<InstrumentKey>);
+    static_assert(std::is_standard_layout_v<InstrumentKey>);
+    SUCCEED();
 }
 
 TEST(Types, QuoteSideStrings) {

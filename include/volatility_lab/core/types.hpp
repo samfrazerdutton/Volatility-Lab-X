@@ -148,11 +148,60 @@ enum class QuoteSide : std::int8_t { Bid = 0, Ask = 1, Mid = 2, Last = 3 };
     return "?";
 }
 
+// ---------------------------------------------------------------------------
+// InstrumentKey
+// ---------------------------------------------------------------------------
+
+/// A European option's structural identity -- (expiry, strike, type) --
+/// usable directly as an unordered-map key.
+///
+/// Exists specifically to replace the pattern
+/// `std::to_string(years) + "|" + std::to_string(strike) + "|" + to_string(type)`
+/// that was this project's first attempt at quote identity
+/// (`runtime/incremental_engine.hpp`'s per-event lookup): that pattern
+/// heap-allocates (twice, for the two `to_string` calls, then again for the
+/// concatenation) on every call, on a path that runs once per market
+/// event -- exactly the hot-path allocation this type exists to remove --
+/// and round-trips both doubles through a decimal string representation,
+/// which is lossy in principle even if it happens not to lose precision
+/// for the specific values this project's own callers pass through it.
+///
+/// Built from `Years` and `Strike` (above) rather than raw doubles so a
+/// caller cannot accidentally construct one with the arguments swapped --
+/// the same strong-typing motivation `Scalar<Tag>` exists for generally.
+struct InstrumentKey {
+    Years years;
+    Strike strike;
+    OptionType type;
+
+    friend constexpr bool operator==(const InstrumentKey& a, const InstrumentKey& b) noexcept {
+        return a.years == b.years && a.strike == b.strike && a.type == b.type;
+    }
+};
+
 }  // namespace vl
 
 template <class Tag>
 struct std::hash<vl::Scalar<Tag>> {
     std::size_t operator()(vl::Scalar<Tag> s) const noexcept {
         return std::hash<double>{}(s.value());
+    }
+};
+
+template <>
+struct std::hash<vl::InstrumentKey> {
+    std::size_t operator()(const vl::InstrumentKey& k) const noexcept {
+        // Combined the same way boost::hash_combine does: each new hash is
+        // mixed in with the golden-ratio-derived constant, which is what
+        // keeps three correlated-looking inputs (an options chain's years
+        // and strikes are not uniformly distributed) from colliding more
+        // than an unrelated set of doubles would.
+        std::size_t seed = std::hash<vl::Years>{}(k.years);
+        auto mix = [&seed](std::size_t h) {
+            seed ^= h + 0x9e3779b97f4a7c15ULL + (seed << 6) + (seed >> 2);
+        };
+        mix(std::hash<vl::Strike>{}(k.strike));
+        mix(std::hash<int>{}(static_cast<int>(k.type)));
+        return seed;
     }
 };

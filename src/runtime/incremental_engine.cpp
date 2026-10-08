@@ -38,15 +38,14 @@ IncrementalEngine::IncrementalEngine(std::vector<OptionQuote> initial_quotes, Co
       surface_(config_.baseline_surface),
       market_(config_.baseline_market) {
     quotes_ = std::move(initial_quotes);
-    // Key is the quote's own identity; OptionQuote has no instrument
-    // string field, so the index is keyed by (strike, years, type) via a
-    // formatted string -- good enough for v1's single-underlier scope, and
-    // consistent with how `apply_event` looks quotes up (same formatting).
+    // Key is the quote's own structural identity -- (years, strike, type)
+    // -- via the typed, allocation-free InstrumentKey (core/types.hpp).
+    // OptionQuote has no instrument-symbol field (deliberately: it is a
+    // single-underlier quote, not a feed record), so this is the natural
+    // identity rather than a stand-in for a missing field.
     for (std::size_t i = 0; i < quotes_.size(); ++i) {
         const auto& q = quotes_[i];
-        const std::string key = std::to_string(q.years) + "|" + std::to_string(q.strike) + "|" +
-                                to_string(q.type);
-        quote_index_by_instrument_[key] = i;
+        quote_index_by_instrument_[InstrumentKey{Years{q.years}, Strike{q.strike}, q.type}] = i;
     }
 
     // One ExpirySlice node per distinct expiry present in the initial book.
@@ -125,8 +124,7 @@ Expected<std::monostate, RuntimeError> IncrementalEngine::apply_event(const Mark
         return make_unexpected(RuntimeError::UnknownExpiry);
     }
 
-    const std::string key = std::to_string(years) + "|" + std::to_string(event.strike.value()) +
-                            "|" + to_string(event.option_type);
+    const InstrumentKey key{event.expiry, event.strike, event.option_type};
     OptionQuote q;
     q.strike = event.strike.value();
     q.years = years;

@@ -50,7 +50,6 @@
 
 #include <chrono>
 #include <map>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -180,7 +179,7 @@ class IncrementalEngine {
 
     // Pipeline state, owned here and mutated only by recompute_node.
     std::vector<OptionQuote> quotes_;
-    std::unordered_map<std::string, std::size_t> quote_index_by_instrument_;
+    std::unordered_map<InstrumentKey, std::size_t> quote_index_by_instrument_;
     std::map<double, SliceVariant> slices_by_expiry_;
     VolSurface surface_;
     MarketPoint market_;

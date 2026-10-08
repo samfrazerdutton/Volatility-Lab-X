@@ -81,3 +81,6 @@ vl_add_test(greeks greeks)
 
 # --- portfolio ---------------------------------------------------------
 vl_add_test(portfolio portfolio)
+
+# --- diagnostics ---------------------------------------------------------
+vl_add_test(diagnostics surface_differential)

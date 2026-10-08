@@ -40,6 +40,9 @@ set(VL_SOURCES
 
     # --- phase 6: portfolio and PnL attribution ------------------------------
     portfolio/portfolio.cpp
+
+    # --- phase 5-flagship: surface differential engine -----------------------
+    diagnostics/surface_differential.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

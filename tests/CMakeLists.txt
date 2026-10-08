@@ -107,6 +107,7 @@ vl_add_test(scenarios scenario)
 vl_add_test(runtime market_event)
 vl_add_test(runtime replay)
 vl_add_test(runtime incremental_engine)
+vl_add_test(runtime full_rebuild)
 
 # --- kernels -----------------------------------------------------------------
 vl_add_test(kernels erfcx_poly)

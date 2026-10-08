@@ -61,6 +61,7 @@ set(VL_SOURCES
     runtime/state_hash.cpp
     runtime/replay.cpp
     runtime/incremental_engine.cpp
+    runtime/full_rebuild.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

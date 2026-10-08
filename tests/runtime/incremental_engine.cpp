@@ -159,6 +159,58 @@ TEST(IncrementalEngine, RecomputeWithNothingDirtyDoesZeroWork) {
 }
 
 // ---------------------------------------------------------------------------
+// Observable work reduction (Phase 2 section 7): the engine must not just
+// be fast, it must report evidence of *why*. This is also the permanent
+// regression test for the indexed-quote-store fix (Phase 2 section 3/5):
+// before that fix, `quotes_examined` would have equalled `quotes_total`
+// on every single-quote update, because `recompute_node`'s `ExpirySlice`
+// case scanned the whole book to find one expiry's own quotes.
+// ---------------------------------------------------------------------------
+
+TEST(IncrementalEngine, SingleQuoteUpdateExaminesOnlyItsOwnExpiryNotTheWholeBook) {
+    // A book with many expiries, each with many quotes, specifically so
+    // "examined one expiry's worth, not the whole book" is a large,
+    // unmistakable gap rather than a coincidence of a small fixture.
+    SyntheticMarketConfig cfg;
+    cfg.regime = MarketRegime::Normal;
+    cfg.strikes_per_expiry = 50;
+    cfg.strike_increment = 0.0;
+    cfg.expiries.clear();
+    for (int i = 0; i < 100; ++i) cfg.expiries.push_back(0.02 + 0.001 * i);
+    auto market = generate_market(cfg);
+    auto norm = normalize(market.snapshot);
+    (void)assign_weights_by_slice(norm.quotes);
+
+    std::vector<double> distinct_years;
+    for (const auto& q : norm.quotes) {
+        if (std::find_if(distinct_years.begin(), distinct_years.end(), [&](double y) {
+                return std::abs(y - q.years) < 1e-9;
+            }) == distinct_years.end()) {
+            distinct_years.push_back(q.years);
+        }
+    }
+
+    IncrementalEngine::Config config;
+    config.baseline_surface = make_baseline_surface();  // tenor-agnostic: only vol() is queried
+    config.baseline_market = MarketPoint{market.snapshot.spot, 0.03, 0.0};
+    IncrementalEngine engine(norm.quotes, config);
+
+    const auto& q0 = norm.quotes[norm.quotes.size() / 2];
+    ASSERT_TRUE(engine.apply_event(make_tick(q0, 0.01)).has_value());
+    const auto report = engine.recompute();
+
+    EXPECT_EQ(report.calibrations_run, 1u) << "exactly one expiry should have been recalibrated";
+    EXPECT_EQ(report.quotes_total, norm.quotes.size());
+    // The touched expiry has ~50 quotes; the whole book has thousands.
+    // This is the direct, measured evidence -- not an inferred one -- that
+    // a single-quote update does not scan the whole market.
+    EXPECT_LT(report.quotes_examined, report.quotes_total / 10)
+        << "quotes_examined=" << report.quotes_examined
+        << " quotes_total=" << report.quotes_total;
+    EXPECT_GT(report.quotes_examined, 0u);
+}
+
+// ---------------------------------------------------------------------------
 // Correctness: incremental must match a fresh full rebuild, exactly
 // ---------------------------------------------------------------------------
 

@@ -71,6 +71,19 @@ IncrementalEngine::IncrementalEngine(std::vector<OptionQuote> initial_quotes, Co
         node_position_.push_back(0);
     }
 
+    // Build the per-expiry quote index once, up front: O(quotes * log
+    // expiries) via `find_expiry_node`'s binary search, rather than the
+    // O(quotes * expiries) a linear per-quote-per-expiry scan would cost.
+    // `quote_indices_by_node_` only has entries for `ExpirySlice` node ids,
+    // which are exactly `0..distinct_years.size()-1` since they are the
+    // first nodes created above; sized to the eventual total node count so
+    // it can be indexed directly by NodeId with no further bookkeeping.
+    quote_indices_by_node_.resize(distinct_years.size() + 5 + config_.positions.size());
+    for (std::size_t i = 0; i < quotes_.size(); ++i) {
+        const NodeId node = find_expiry_node(quotes_[i].years);
+        if (node != kInvalidNodeId) quote_indices_by_node_[node].push_back(i);
+    }
+
     surface_node_ = graph_.add_node("surface", expiry_ids);
     node_kind_.push_back(NodeKind::Surface);
     node_expiry_years_.push_back(0.0);
@@ -116,11 +129,8 @@ IncrementalEngine::IncrementalEngine(std::vector<OptionQuote> initial_quotes, Co
 
 Expected<std::monostate, RuntimeError> IncrementalEngine::apply_event(const MarketEvent& event) {
     const double years = event.expiry.value();
-    const auto node_it =
-        std::find_if(expiry_node_by_years_.begin(), expiry_node_by_years_.end(), [&](const auto& kv) {
-            return std::abs(kv.first - years) <= kYearsMatchTolerance;
-        });
-    if (node_it == expiry_node_by_years_.end()) {
+    const NodeId node = find_expiry_node(years);
+    if (node == kInvalidNodeId) {
         return make_unexpected(RuntimeError::UnknownExpiry);
     }
 
@@ -152,19 +162,37 @@ Expected<std::monostate, RuntimeError> IncrementalEngine::apply_event(const Mark
     q.status = QuoteStatus::Unvalidated;
 
     if (idx_it != quote_index_by_instrument_.end()) {
+        // Existing instrument: same slot, same expiry bucket -- no index
+        // maintenance needed.
         quotes_[idx_it->second] = q;
     } else {
-        quote_index_by_instrument_[key] = quotes_.size();
+        // New instrument: record its slot and add it to its expiry's
+        // bucket so a future ExpirySlice recompute finds it without
+        // rescanning the whole book.
+        const std::size_t new_index = quotes_.size();
+        quote_index_by_instrument_[key] = new_index;
         quotes_.push_back(q);
+        quote_indices_by_node_[node].push_back(new_index);
     }
 
-    graph_.mark_dirty(node_it->second);
+    graph_.mark_dirty(node);
     return std::monostate{};
 }
 
 void IncrementalEngine::update_market_point(MarketPoint market) noexcept {
     market_ = market;
     graph_.mark_dirty(surface_node_);
+}
+
+NodeId IncrementalEngine::find_expiry_node(double years) const noexcept {
+    // See the header's comment: construction only ever inserts one entry
+    // per expiry *more than* kYearsMatchTolerance apart from every other,
+    // so lower_bound can find at most one candidate within tolerance.
+    auto it = expiry_node_by_years_.lower_bound(years - kYearsMatchTolerance);
+    if (it != expiry_node_by_years_.end() && std::abs(it->first - years) <= kYearsMatchTolerance) {
+        return it->second;
+    }
+    return kInvalidNodeId;
 }
 
 void IncrementalEngine::rebuild_surface_from_slices() {
@@ -180,15 +208,24 @@ void IncrementalEngine::rebuild_surface_from_slices() {
                           build_discount_curve(market_, years));
 }
 
-void IncrementalEngine::recompute_node(NodeId id) {
+void IncrementalEngine::recompute_node(NodeId id, RecomputeReport& report) {
     const NodeKind kind = node_kind_[id];
     switch (kind) {
         case NodeKind::ExpirySlice: {
             const double years = node_expiry_years_[id];
+            // Indexed lookup, not a scan of `quotes_`: `quote_indices_by_node_[id]`
+            // holds exactly this expiry's own quote slots, built once at
+            // construction and kept current by `apply_event`. Recomputing
+            // one expiry out of however many the book has now costs
+            // O(that expiry's own quote count), not O(total quotes) --
+            // see docs/INCREMENTAL_RUNTIME.md for the measured before/after.
+            const auto& indices = quote_indices_by_node_[id];
             std::vector<OptionQuote> slice_quotes;
-            for (const auto& q : quotes_) {
-                if (std::abs(q.years - years) <= kYearsMatchTolerance) slice_quotes.push_back(q);
-            }
+            slice_quotes.reserve(indices.size());
+            for (std::size_t idx : indices) slice_quotes.push_back(quotes_[idx]);
+            report.quotes_examined += slice_quotes.size();
+            report.calibrations_run += 1;
+
             MarketSnapshot snapshot;
             snapshot.underlying = "engine";
             snapshot.spot = market_.spot;
@@ -240,13 +277,14 @@ void IncrementalEngine::recompute_node(NodeId id) {
 RecomputeReport IncrementalEngine::recompute() {
     RecomputeReport report;
     report.total_nodes = graph_.size();
+    report.quotes_total = quotes_.size();
     const auto dirty = graph_.dirty_nodes_in_order();
     report.recomputed_nodes = dirty.size();
     report.reused_nodes = report.total_nodes - report.recomputed_nodes;
 
     const auto start = std::chrono::steady_clock::now();
     for (NodeId id : dirty) {
-        recompute_node(id);
+        recompute_node(id, report);
         graph_.mark_clean(id);
     }
     report.latency = std::chrono::steady_clock::now() - start;

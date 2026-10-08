@@ -162,6 +162,14 @@ int main() {
     std::printf("  nodes recomputed:%zu\n", report.recomputed_nodes);
     std::printf("  nodes reused:    %zu\n", report.reused_nodes);
     std::printf("  computation avoided: %.1f%%\n", report.fraction_avoided() * 100.0);
+    std::printf("  calibrations run:    %zu (out of %zu expiries)\n", report.calibrations_run,
+               distinct_years.size());
+    std::printf("  quotes total:        %zu\n", report.quotes_total);
+    std::printf("  quotes examined:     %zu (%.2f%% of the book)\n", report.quotes_examined,
+               report.quotes_total > 0
+                   ? 100.0 * static_cast<double>(report.quotes_examined) /
+                         static_cast<double>(report.quotes_total)
+                   : 0.0);
     std::printf("  incremental runtime: %.1f us\n", incr_us);
     std::printf("  new PnL:         $%.2f\n", engine.pnl().total_exact_pnl);
 

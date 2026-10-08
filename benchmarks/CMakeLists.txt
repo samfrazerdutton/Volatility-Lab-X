@@ -20,3 +20,9 @@ target_link_libraries(bench_million_state PRIVATE volatility_lab vl_compiler_fla
 if(WIN32)
     target_link_libraries(bench_million_state PRIVATE psapi)
 endif()
+
+# bench_incremental_scaling links alloc_counter.cpp, which overrides the
+# global operator new/delete -- scoped to this one executable only (see
+# alloc_counter.hpp). No other target links that file.
+add_executable(bench_incremental_scaling incremental_scaling.cpp alloc_counter.cpp)
+target_link_libraries(bench_incremental_scaling PRIVATE volatility_lab vl_compiler_flags)

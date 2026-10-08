@@ -81,11 +81,29 @@ enum class RuntimeError : std::uint8_t {
 /// never fabricated. `total_nodes`/`recomputed_nodes` come directly from
 /// the graph's own bookkeeping; `latency` from `std::chrono::steady_clock`
 /// around the actual recompute work.
+///
+/// `quotes_examined` and `calibrations_run` exist to make the engine's
+/// incremental behaviour *observable*, not just fast: a caller (or this
+/// project's own benchmark) can confirm that recomputing one expiry out of
+/// thousands actually touched only that expiry's own quotes, rather than
+/// trusting the timing number alone.
 struct RecomputeReport {
     std::size_t total_nodes = 0;
     std::size_t recomputed_nodes = 0;
     std::size_t reused_nodes = 0;
     std::chrono::nanoseconds latency{0};
+
+    /// Total quotes this engine holds at the time of this report.
+    std::size_t quotes_total = 0;
+    /// Quotes actually read while recomputing `ExpirySlice` nodes this
+    /// pass -- the sum of each recomputed slice's own bucket size, never
+    /// the whole book, once the per-expiry index is in use. Comparing this
+    /// against `quotes_total` is the direct, measured evidence for "this
+    /// update did not scan the whole market".
+    std::size_t quotes_examined = 0;
+    /// `ExpirySlice` nodes recomputed this pass, i.e. SVI calibrations
+    /// actually run (as opposed to reused from the previous pass).
+    std::size_t calibrations_run = 0;
 
     [[nodiscard]] double fraction_avoided() const noexcept {
         return (total_nodes > 0) ? static_cast<double>(reused_nodes) /
@@ -158,8 +176,18 @@ class IncrementalEngine {
         Pnl,
     };
 
-    void recompute_node(NodeId id);
+    void recompute_node(NodeId id, RecomputeReport& report);
     void rebuild_surface_from_slices();
+
+    /// O(log E) tolerance-aware lookup into `expiry_node_by_years_`
+    /// (`E` = number of distinct expiries), replacing a linear
+    /// `std::find_if` scan of the same map. Correct because construction
+    /// only ever inserts one entry per *distinct* (more than
+    /// `kYearsMatchTolerance` apart) expiry, so no two keys are within
+    /// `2*kYearsMatchTolerance` of each other -- `lower_bound(years -
+    /// tolerance)` can therefore find at most one candidate key, and if
+    /// that candidate is not within tolerance, no other key can be either.
+    [[nodiscard]] NodeId find_expiry_node(double years) const noexcept;
 
     DependencyGraph graph_;
     Config config_;
@@ -180,6 +208,14 @@ class IncrementalEngine {
     // Pipeline state, owned here and mutated only by recompute_node.
     std::vector<OptionQuote> quotes_;
     std::unordered_map<InstrumentKey, std::size_t> quote_index_by_instrument_;
+    // Indexed quote store: `quote_indices_by_node_[id]` is the list of
+    // indices into `quotes_` belonging to `ExpirySlice` node `id`, built
+    // once at construction and maintained incrementally by `apply_event`.
+    // This is what makes an `ExpirySlice` recompute touch only its own
+    // expiry's quotes instead of scanning the whole book -- see
+    // docs/INCREMENTAL_RUNTIME.md's "indexed quote store" section for the
+    // before/after this replaced.
+    std::vector<std::vector<std::size_t>> quote_indices_by_node_;
     std::map<double, SliceVariant> slices_by_expiry_;
     VolSurface surface_;
     MarketPoint market_;

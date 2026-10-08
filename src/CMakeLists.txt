@@ -56,6 +56,8 @@ set(VL_SOURCES
 
     # --- runtime: deterministic market event model ----------------------------
     runtime/market_event.cpp
+    runtime/state_hash.cpp
+    runtime/replay.cpp
 )
 
 add_library(volatility_lab STATIC ${VL_SOURCES})

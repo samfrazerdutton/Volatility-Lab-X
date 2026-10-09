@@ -1,0 +1,77 @@
+:root {
+  /* Deep graphite ground, restrained near-white text, muted slate surfaces,
+     one electric-cyan accent. Green/red reserved for meaningful state
+     changes only (quote status, diffs, errors) -- never decorative. */
+  --bg: #0b0d10;
+  --surface: #14171c;
+  --surface-raised: #1a1e24;
+  --border: #272b33;
+  --border-strong: #363b45;
+  --text: #e8eaed;
+  --text-dim: #9aa1ab;
+  --text-faint: #5c636e;
+  --accent: #35e0e0;
+  --accent-dim: #1d7a7a;
+  --good: #3dd68c;
+  --bad: #e5484d;
+  --warn: #e0a635;
+
+  --mono: 'SFMono-Regular', 'Consolas', 'Liberation Mono', Menlo, Courier, monospace;
+  --sans: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+a {
+  color: var(--accent);
+}
+
+::selection {
+  background: var(--accent-dim);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 2px;
+}

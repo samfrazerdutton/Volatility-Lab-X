@@ -154,6 +154,15 @@ class IncrementalEngine {
 
     [[nodiscard]] const VolSurface& surface() const noexcept { return surface_; }
     [[nodiscard]] const MarketPoint& market() const noexcept { return market_; }
+    /// The engine's current quote book, in whatever order they were first
+    /// seen (construction order, then append order for new instruments
+    /// from `apply_event`). Read-only: nothing outside `apply_event`/
+    /// `recompute_node` is allowed to mutate engine state. Added for the
+    /// HTTP service (`apps/server`) to report real quote data rather than
+    /// a second, separately-tracked copy that could drift from what the
+    /// engine actually calibrated against.
+    [[nodiscard]] std::span<const OptionQuote> quotes() const noexcept { return quotes_; }
+    [[nodiscard]] const Config& config() const noexcept { return config_; }
     [[nodiscard]] const SurfaceDifferential& differential() const noexcept { return differential_; }
     [[nodiscard]] const PointUncertainty& uncertainty() const noexcept { return uncertainty_; }
     [[nodiscard]] std::span<const PositionValuation> position_valuations() const noexcept {

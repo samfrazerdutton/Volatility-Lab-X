@@ -18,6 +18,7 @@ option(VL_BUILD_TESTS       "Build the test suite"                      ON)
 option(VL_BUILD_BENCHMARKS  "Build the benchmark suite"                 ON)
 option(VL_BUILD_EXAMPLES    "Build the examples"                        ON)
 option(VL_BUILD_CLI         "Build the volatility-lab CLI"              ON)
+option(VL_BUILD_SERVER      "Build the local HTTP service for the web frontend" ON)
 option(VL_BUILD_PYTHON      "Build the pybind11 Python bindings"        OFF)
 option(VL_ENABLE_SIMD       "Build the explicit SIMD kernels"           ON)
 option(VL_ENABLE_OPENMP     "Use OpenMP for the parallel backend"       ON)
@@ -70,6 +71,10 @@ add_subdirectory(kernels)
 
 if(VL_BUILD_CLI)
   add_subdirectory(apps/cli)
+endif()
+
+if(VL_BUILD_SERVER)
+  add_subdirectory(apps/server)
 endif()
 
 if(VL_BUILD_TESTS)
